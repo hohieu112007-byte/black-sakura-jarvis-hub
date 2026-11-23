@@ -515,6 +515,15 @@ export function SettingsDrawer({
                   style={{ width: `${Math.max(backendStatus?.vram_loaded ? 6 : 0, vramPct)}%` }}
                 />
               </div>
+              {backendStatus?.external_ai_active && (
+                <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-50 border border-amber-400 text-amber-950">
+                  Đang chia sẻ GPU với app AI khác
+                  {typeof backendStatus.gpu_vram_free_gb === "number"
+                    ? ` (trống ${backendStatus.gpu_vram_free_gb} GB)`
+                    : ""}{" "}
+                  · Tự động bảo vệ VRAM (không xả model của app khác).
+                </div>
+              )}
             </div>
 
             {/* Model Picker (Compact 3-Column Row) */}
@@ -870,7 +879,7 @@ export function SettingsDrawer({
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white hover:bg-zinc-100 border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
-                <span>Mở thư mục Exports</span>
+                <span>Thư mục Exports</span>
               </button>
               <button
                 type="button"
@@ -878,17 +887,26 @@ export function SettingsDrawer({
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
               >
                 <EyeOff className="w-3.5 h-3.5" />
-                <span>Ẩn xuống System Tray</span>
+                <span>Ẩn xuống Tray</span>
               </button>
             </div>
-            <button
-              type="button"
-              onClick={() => window.jarvisApi?.reopenSetup?.()}
-              className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-zinc-50 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Mở lại Thiết lập lần đầu (Setup Wizard)</span>
-            </button>
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={() => window.jarvisApi?.reopenSetup?.()}
+                className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-zinc-50 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[10.5px] font-bold text-[#0E0E13] cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Mở Setup Wizard</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => window.jarvisApi?.quitApp?.()}
+                className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 hover:text-white border-2 border-[#0E0E13] text-[10.5px] font-black text-rose-700 cursor-pointer"
+              >
+                <span>Thoát hẳn App</span>
+              </button>
+            </div>
           </>
         )}
 

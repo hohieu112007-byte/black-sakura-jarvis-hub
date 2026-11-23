@@ -36,7 +36,9 @@ from .win_native import assert_safe_target_name, is_blocked_hotkey
 BACKEND_DIR = Path(__file__).resolve().parent
 ENV_PATH = BACKEND_DIR.parent / ".env"
 CONFIG_PATH = BACKEND_DIR / "config.json"
-OLLAMA_URL = "http://127.0.0.1:11434"
+OLLAMA_URL = (os.environ.get("OLLAMA_HOST") or "http://127.0.0.1:11434").strip().rstrip("/")
+if not OLLAMA_URL.startswith(("http://", "https://")):
+    OLLAMA_URL = f"http://{OLLAMA_URL}"
 VISION_MODEL = "qwen3.5:4b"
 
 GAMING_PROCESSES = {
@@ -659,6 +661,38 @@ def _detect_gpu_info() -> Dict[str, Any]:
     return dict(info)
 
 
+_GPU_FREE_VRAM_CACHE: Tuple[float, Optional[float]] = (0.0, None)
+
+
+def _query_gpu_free_vram_gb() -> Optional[float]:
+    """Query live free NVIDIA VRAM (GB) with 4s cache to detect external local AI apps sharing the GPU."""
+    global _GPU_FREE_VRAM_CACHE
+    info = _detect_gpu_info()
+    if not info.get("has_nvidia_gpu"):
+        return None
+    now = time.monotonic()
+    if (now - _GPU_FREE_VRAM_CACHE[0]) < 4.0:
+        return _GPU_FREE_VRAM_CACHE[1]
+    free_gb: Optional[float] = None
+    try:
+        import subprocess
+
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+            text=True,
+            timeout=1.4,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).strip()
+        first = out.splitlines()[0] if out else ""
+        if first:
+            free_gb = round(float(first.strip()) / 1024.0, 2)
+    except Exception:
+        pass
+    _GPU_FREE_VRAM_CACHE = (now, free_gb)
+    return free_gb
+
+
 def _is_ollama_installed() -> bool:
     import shutil
 
@@ -986,6 +1020,7 @@ class VramRouter:
         self._tags_cache_online: bool = False
         self._tags_cache_vision: bool = False
         self._tags_cache_models: List[str] = []
+        self._owned_ollama_models: set[str] = set()
         self._last_api_error: str = ""
         self._last_api_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
@@ -1554,26 +1589,89 @@ class VramRouter:
             for m in sorted(pending):
                 self._ollama_unload_model(m)
 
+    def _detect_external_ai_contention(
+        self, ps_detail: Optional[List[Dict[str, Any]]] = None
+    ) -> Tuple[bool, List[str], Optional[float]]:
+        """Detect when another local AI app (e.g. translation app, llama.cpp, PyTorch, Ollama) is using the GPU."""
+        detail = ps_detail if ps_detail is not None else self._ollama_ps_detail()
+        external_models = [
+            m["name"] for m in detail
+            if m.get("name") and m["name"] not in self._owned_ollama_models
+        ]
+        free_vram_gb = _query_gpu_free_vram_gb()
+        gpu_info = _detect_gpu_info()
+        total_vram_gb = float(gpu_info.get("gpu_vram_total_gb") or 0.0)
+        jarvis_has_loaded = bool(
+            any(m.get("name") in self._owned_ollama_models for m in detail)
+            or self.stt.is_loaded()
+            or self.vision_parser.is_loaded()
+        )
+        low_free_vram = (
+            free_vram_gb is not None
+            and total_vram_gb >= 4.0
+            and free_vram_gb < 2.2
+            and not jarvis_has_loaded
+        )
+        return (bool(external_models) or low_free_vram), external_models, free_vram_gb
+
+    def _ollama_post_chat(
+        self,
+        payload: Dict[str, Any],
+        timeout: Tuple[float, float] = (3.5, 65.0),
+        allow_cpu_fallback: bool = True,
+    ) -> requests.Response:
+        """Send /api/chat with VRAM coexistence protection: avoids CUDA OOM & never evicts another AI app's GPU model."""
+        model_name = str(payload.get("model") or "").strip()
+        if model_name:
+            self._owned_ollama_models.add(model_name)
+
+        req_payload = dict(payload)
+        opts = dict(req_payload.get("options") or {})
+
+        # Proactively offload Jarvis's request to CPU (num_gpu=0) if another local AI app leaves <2.0 GB VRAM free
+        # and our model isn't already resident in Ollama — prevents CUDA OOM & protects the other app's VRAM!
+        if allow_cpu_fallback and "num_gpu" not in opts:
+            ps_detail = self._ollama_ps_detail()
+            already_resident = any(m.get("name") == model_name for m in ps_detail)
+            ext_active, _ext_models, free_gb = self._detect_external_ai_contention(ps_detail)
+            if ext_active and not already_resident and free_gb is not None and free_gb < 2.0:
+                opts["num_gpu"] = 0
+                req_payload["options"] = opts
+
+        resp = self._http.post(f"{OLLAMA_URL}/api/chat", json=req_payload, timeout=timeout)
+        if not resp.ok and allow_cpu_fallback and opts.get("num_gpu") != 0 and resp.status_code in (500, 503):
+            err_low = (resp.text or "").lower()
+            if any(k in err_low for k in ("memory", "cuda", "vram", "allocate", "oom", "cublas", "runner")):
+                cpu_opts = {**opts, "num_gpu": 0}
+                cpu_payload = {**req_payload, "options": cpu_opts}
+                resp = self._http.post(f"{OLLAMA_URL}/api/chat", json=cpu_payload, timeout=timeout)
+        return resp
+
     def force_unload_all(self) -> Dict[str, Any]:
         with self._lock:
             stt_res = self.stt.unload_vram()
             omni_res = self.vision_parser.unload_vram()
             ps_ok, ps_detail = self._ollama_ps_detail_with_ok()
             if ps_ok:
-                loaded = {m["name"] for m in ps_detail}
+                # Only unload models that Jarvis-Hub itself loaded — NEVER evict another local AI app's Ollama model!
+                jarvis_known = self._owned_ollama_models | {self.current_model, FAST_GAME_MODEL, VISION_MODEL}
+                loaded = {m["name"] for m in ps_detail if m.get("name") in jarvis_known}
             else:
-                loaded = {"qwen3:0.6b", "qwen3:1.7b", "qwen3.5:4b", VISION_MODEL, self.current_model}
+                loaded = set(self._owned_ollama_models) | {self.current_model}
             unloaded_models = []
             for m in sorted(loaded):
                 if m and self._ollama_unload_model(m):
                     unloaded_models.append(m)
+                    self._owned_ollama_models.discard(m)
             remaining = self._ollama_ps_models() if unloaded_models else ([] if ps_ok else self._ollama_ps_models())
             return {
                 "ok": True,
                 "stt": stt_res,
                 "omniparser": omni_res,
                 "ollama_unloaded": unloaded_models,
-                "vram_loaded": self.stt.is_loaded() or self.vision_parser.is_loaded() or len(remaining) > 0,
+                "vram_loaded": self.stt.is_loaded() or self.vision_parser.is_loaded() or any(
+                    m in self._owned_ollama_models for m in remaining
+                ),
             }
 
     def set_model(self, model_key: str) -> Dict[str, Any]:
@@ -1599,8 +1697,10 @@ class VramRouter:
                 self.force_unload_all()
             else:
                 keep_val = OLLAMA_KEEP_ALIVE_MAP.get(normalized, "5m")
+                jarvis_known = self._owned_ollama_models | {self.current_model, FAST_GAME_MODEL, VISION_MODEL}
                 for m in self._ollama_ps_models():
-                    self._ollama_touch_keep_alive(m, keep_val)
+                    if m in jarvis_known:
+                        self._ollama_touch_keep_alive(m, keep_val)
         return self.get_status()
 
     def set_safety_mode(self, mode: str) -> str:
@@ -1736,6 +1836,7 @@ class VramRouter:
 
         gpu_info = _detect_gpu_info()
         ollama_installed = ollama_online or _is_ollama_installed()
+        external_ai_active, external_ai_models, gpu_vram_free_gb = self._detect_external_ai_contention(ps_detail)
 
         return {
             "ok": True,
@@ -1750,7 +1851,10 @@ class VramRouter:
             "total_vram_gb": total_vram_gb,
             "gpu_name": gpu_info["gpu_name"],
             "gpu_vram_total_gb": gpu_info["gpu_vram_total_gb"],
+            "gpu_vram_free_gb": gpu_vram_free_gb,
             "has_nvidia_gpu": gpu_info["has_nvidia_gpu"],
+            "external_ai_active": external_ai_active,
+            "external_ai_models": external_ai_models,
             "ollama_installed": ollama_installed,
             "ollama_online": ollama_online,
             "ollama_installed_models": installed_models,
@@ -2026,14 +2130,13 @@ class VramRouter:
             payload["format"] = "json"
 
         try:
-            resp = self._http.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=(3.5, 85.0 if use_think else 65.0))
+            resp = self._ollama_post_chat(payload, timeout=(3.5, 85.0 if use_think else 65.0))
             resp.raise_for_status()
             msg = resp.json().get("message") or {}
             content, th_txt, _tc = _extract_thinking_and_clean_content(msg)
             if use_think and not content and th_txt:
-                r2 = self._http.post(
-                    f"{OLLAMA_URL}/api/chat",
-                    json={**payload, "think": False, "options": {"temperature": 0.1, "num_predict": 280}},
+                r2 = self._ollama_post_chat(
+                    {**payload, "think": False, "options": {"temperature": 0.1, "num_predict": 280}},
                     timeout=(3.5, 55.0),
                 )
                 r2.raise_for_status()
@@ -2342,9 +2445,8 @@ class VramRouter:
                     "tools": selected_tools,
                     "messages": messages,
                 }
-                resp = self._http.post(
-                    f"{OLLAMA_URL}/api/chat",
-                    json=payload,
+                resp = self._ollama_post_chat(
+                    payload,
                     timeout=(3.5, 90.0 if use_think else 70.0),
                 )
                 resp.raise_for_status()
@@ -2360,7 +2462,7 @@ class VramRouter:
                         "think": False,
                         "options": {"temperature": 0.0, "num_predict": 320},
                     }
-                    retry_resp = self._http.post(f"{OLLAMA_URL}/api/chat", json=retry_payload, timeout=(3.5, 60.0))
+                    retry_resp = self._ollama_post_chat(retry_payload, timeout=(3.5, 60.0))
                     retry_resp.raise_for_status()
                     retry_msg = retry_resp.json().get("message") or {}
                     final_assistant_text, _rt2, tool_calls = _extract_thinking_and_clean_content(retry_msg)
@@ -2371,9 +2473,8 @@ class VramRouter:
 
                 # Safety net: if pruned toolset returned 0 tool calls on an action command, retry once with full LOCAL_AGENT_TOOLS
                 if not tool_calls and not executed_tools and len(selected_tools) < len(LOCAL_AGENT_TOOLS) and _looks_like_action_command(text):
-                    full_resp = self._http.post(
-                        f"{OLLAMA_URL}/api/chat",
-                        json={**payload, "tools": LOCAL_AGENT_TOOLS, "think": False, "options": {"temperature": 0.0, "num_ctx": self.num_ctx, "num_predict": 320}},
+                    full_resp = self._ollama_post_chat(
+                        {**payload, "tools": LOCAL_AGENT_TOOLS, "think": False, "options": {"temperature": 0.0, "num_ctx": self.num_ctx, "num_predict": 320}},
                         timeout=(3.5, 65.0),
                     )
                     full_resp.raise_for_status()
@@ -2567,14 +2668,13 @@ class VramRouter:
             ],
         }
         try:
-            resp = self._http.post(f"{OLLAMA_URL}/api/chat", json=payload, timeout=(3.5, 85.0 if use_think else 55.0))
+            resp = self._ollama_post_chat(payload, timeout=(3.5, 85.0 if use_think else 55.0))
             resp.raise_for_status()
             msg = resp.json().get("message") or {}
             ans, _th, _tc = _extract_thinking_and_clean_content(msg)
             if use_think and not ans and _th:
-                r2 = self._http.post(
-                    f"{OLLAMA_URL}/api/chat",
-                    json={**payload, "think": False, "options": {"temperature": 0.2, "num_predict": 240}},
+                r2 = self._ollama_post_chat(
+                    {**payload, "think": False, "options": {"temperature": 0.2, "num_predict": 240}},
                     timeout=(3.5, 45.0),
                 )
                 r2.raise_for_status()
@@ -3267,9 +3367,8 @@ class VramRouter:
             "Nếu thực sự suy đoán được 1 lệnh đúng âm thanh nhất, CHỈ trả về đúng 1 câu lệnh (không giải thích, không dấu ngoặc kép). Nếu không chắc chắn 100%, trả về: KEEP"
         )
         try:
-            resp = self._http.post(
-                f"{OLLAMA_URL}/api/chat",
-                json={
+            resp = self._ollama_post_chat(
+                {
                     "model": eff_model,
                     "stream": False,
                     "think": False,

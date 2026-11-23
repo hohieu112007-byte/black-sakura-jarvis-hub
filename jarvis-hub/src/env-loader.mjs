@@ -30,9 +30,27 @@ export const SANDBOX_ROOT = path.resolve(
 export const SWITCH_MODE_SCRIPT = path.join(SANDBOX_ROOT, ".scripts", "switch-mode.ps1");
 export const EXPORTS_DIR = path.join(SANDBOX_ROOT, "exports");
 const GLOBAL_SETTINGS_PATH = path.join(os.homedir(), ".gemini", "settings.json");
-const STATE_FILE = fs.existsSync(path.join(WORKSPACE_ROOT, "jarvis-hub"))
-  ? path.join(WORKSPACE_ROOT, "jarvis-hub", "state.json")
-  : path.join(WORKSPACE_ROOT, "state.json");
+
+function resolveStateFilePath() {
+  const preferred = fs.existsSync(path.join(WORKSPACE_ROOT, "jarvis-hub"))
+    ? path.join(WORKSPACE_ROOT, "jarvis-hub", "state.json")
+    : path.join(WORKSPACE_ROOT, "state.json");
+  try {
+    fs.accessSync(path.dirname(preferred), fs.constants.W_OK);
+    return preferred;
+  } catch {
+    const fallbackDir = path.join(
+      process.env.LOCALAPPDATA || os.homedir(),
+      "BlackSakuraJarvisHub"
+    );
+    try {
+      fs.mkdirSync(fallbackDir, { recursive: true });
+    } catch {}
+    return path.join(fallbackDir, "state.json");
+  }
+}
+
+const STATE_FILE = resolveStateFilePath();
 
 function parseDotEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;

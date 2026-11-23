@@ -6,6 +6,15 @@ contextBridge.exposeInMainWorld("jarvisApi", {
   backendRequest: (endpoint, body = null) => ipcRenderer.invoke("hub:backend-request", { endpoint, body }),
   getSetupDiagnostics: () => ipcRenderer.invoke("hub:get-setup-diagnostics"),
   openExternalSafe: (url) => ipcRenderer.invoke("hub:open-external", url),
+  installOllama: () => ipcRenderer.invoke("hub:install-ollama"),
+  pullOllamaModel: (modelName) => ipcRenderer.invoke("hub:pull-ollama-model", modelName),
+  installPythonDeps: () => ipcRenderer.invoke("hub:install-python-deps"),
+  cancelSetupTask: () => ipcRenderer.invoke("hub:cancel-setup-task"),
+  onSetupProgress: (callback) => {
+    const handler = (_evt, payload) => callback(payload);
+    ipcRenderer.on("setup:progress", handler);
+    return () => ipcRenderer.removeListener("setup:progress", handler);
+  },
   completeOnboarding: (payload) => ipcRenderer.invoke("hub:complete-onboarding", payload),
   reopenSetup: () => ipcRenderer.invoke("hub:reopen-setup"),
   sendPrompt: (text, context = null) => ipcRenderer.invoke("hub:send-prompt", { text, context }),
@@ -48,6 +57,7 @@ contextBridge.exposeInMainWorld("jarvisApi", {
   reportActivityState: (state) => ipcRenderer.send("hub:activity-state", state),
   pingActivity: () => ipcRenderer.send("hub:ping-activity"),
   hideWindow: () => ipcRenderer.send("hub:hide"),
+  quitApp: () => ipcRenderer.send("hub:quit"),
   onEvent: (callback) => {
     const handler = (_evt, payload) => callback(payload);
     ipcRenderer.on("hub:event", handler);

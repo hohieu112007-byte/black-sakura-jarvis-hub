@@ -321,9 +321,6 @@ export default function App() {
         let data = null;
         if (window.jarvisApi?.backendRequest) {
           data = await window.jarvisApi.backendRequest("/status", null);
-        } else {
-          const resp = await fetch("http://127.0.0.1:8765/status");
-          if (resp.ok) data = await resp.json();
         }
         if (!data?.ok || !alive) return;
         const nextGaming = Boolean(data?.is_gaming);
@@ -1526,13 +1523,24 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        data-sakuga-fx="smoke"
                         onClick={(e) => {
-                          triggerSakugaBurst(e, { fx: "smoke" });
+                          e.stopPropagation();
+                          clearAutoIdle();
                           setAttachMenuOpen(false);
-                          setTimeout(() => window.jarvisApi?.hideWindow?.(), 140);
+                          setSettingsOpen(false);
+                          setExpandedOpen(false);
+                          stopAllAudioPlayback();
+                          if (e.shiftKey) {
+                            window.jarvisApi?.quitApp?.();
+                          } else {
+                            window.jarvisApi?.hideWindow?.();
+                          }
                         }}
-                        title="Ẩn xuống khay"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          window.jarvisApi?.quitApp?.();
+                        }}
+                        title="Ẩn xuống khay (Shift+Click hoặc Chuột phải để thoát hẳn)"
                         className="w-6 h-6 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
                       >
                         <X className="w-3 h-3" />
@@ -1816,13 +1824,24 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        data-sakuga-fx="smoke"
                         onClick={(e) => {
-                          triggerSakugaBurst(e, { fx: "smoke" });
+                          e.stopPropagation();
+                          clearAutoIdle();
                           setAttachMenuOpen(false);
-                          setTimeout(() => window.jarvisApi?.hideWindow?.(), 140);
+                          setSettingsOpen(false);
+                          setExpandedOpen(false);
+                          stopAllAudioPlayback();
+                          if (e.shiftKey) {
+                            window.jarvisApi?.quitApp?.();
+                          } else {
+                            window.jarvisApi?.hideWindow?.();
+                          }
                         }}
-                        title="Ẩn Hub"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          window.jarvisApi?.quitApp?.();
+                        }}
+                        title="Ẩn xuống khay (Shift+Click hoặc Chuột phải để thoát hẳn)"
                         className="w-6 h-6 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
                       >
                         <X className="w-3 h-3" />

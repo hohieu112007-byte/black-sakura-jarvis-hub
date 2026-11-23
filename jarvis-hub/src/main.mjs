@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, clipboard, shell } from "electron";
 import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
 import path from "node:path";
 import zlib from "node:zlib";
 import readline from "node:readline";
@@ -40,14 +41,42 @@ async function probeJarvisBackend(port, timeoutMs = 1200) {
     const resp = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!resp.ok) return null;
     const data = await resp.json();
-    if (data && data.ok === true && typeof data.mcp_status === "object") {
+    // Strict app fingerprint so another local AI app on :8765 (e.g. translation launcher) is NEVER mistaken for Jarvis-Hub
+    if (
+      data &&
+      data.ok === true &&
+      typeof data.mcp_status === "object" &&
+      (data.app_name === "Black Sakura Jarvis-Hub" || typeof data.api_fallback_enabled === "boolean")
+    ) {
       return data;
     }
   } catch {}
   return null;
 }
 
-function isPortFree(port) {
+function isPortListeningLocal(port, timeoutMs = 350) {
+  return new Promise((resolve) => {
+    const sock = net.createConnection({ host: "127.0.0.1", port });
+    let done = false;
+    const finish = (listening) => {
+      if (done) return;
+      done = true;
+      try {
+        sock.destroy();
+      } catch {}
+      resolve(listening);
+    };
+    sock.setTimeout(timeoutMs);
+    sock.once("connect", () => finish(true));
+    sock.once("timeout", () => finish(false));
+    sock.once("error", () => finish(false));
+  });
+}
+
+async function isPortFree(port) {
+  // On Windows, a service bound to 0.0.0.0:port can sometimes allow a non-exclusive 127.0.0.1 bind;
+  // checking TCP connect first guarantees we detect any active listener immediately.
+  if (await isPortListeningLocal(port, 350)) return false;
   return new Promise((resolve) => {
     const srv = net.createServer();
     srv.unref();
@@ -55,7 +84,21 @@ function isPortFree(port) {
     srv.once("listening", () => {
       srv.close(() => resolve(true));
     });
-    srv.listen(port, "127.0.0.1");
+    srv.listen({ port, host: "127.0.0.1", exclusive: true });
+  });
+}
+
+function pickEphemeralFreePort() {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", () => resolve(18770));
+    srv.once("listening", () => {
+      const addr = srv.address();
+      const port = typeof addr === "object" && addr ? addr.port : 18770;
+      srv.close(() => resolve(port));
+    });
+    srv.listen({ port: 0, host: "127.0.0.1", exclusive: true });
   });
 }
 
@@ -112,7 +155,15 @@ async function callLocalBackend(endpoint, payload = null, timeoutMs = 90000, aut
         };
       }
       const data = await resp.json();
-      if (endpoint === "/status" && !(data && data.ok === true && typeof data.mcp_status === "object")) {
+      if (
+        endpoint === "/status" &&
+        !(
+          data &&
+          data.ok === true &&
+          typeof data.mcp_status === "object" &&
+          (data.app_name === "Black Sakura Jarvis-Hub" || typeof data.api_fallback_enabled === "boolean")
+        )
+      ) {
         return null;
       }
       return data;
@@ -172,6 +223,7 @@ function resolveOllamaLaunch() {
   // Prioritize headless CLI server (`ollama.exe serve`) so the Ollama desktop GUI window never pops up on Hub startup.
   const candidates = [
     path.join(process.env.LOCALAPPDATA || "", "Programs", "Ollama", "ollama.exe"),
+    path.join(os.homedir(), "AppData", "Local", "Programs", "Ollama", "ollama.exe"),
     path.join(process.env.ProgramFiles || "", "Ollama", "ollama.exe"),
   ];
   for (const oll of candidates) {
@@ -180,35 +232,57 @@ function resolveOllamaLaunch() {
   return null;
 }
 
+function getOllamaBaseUrl() {
+  return String(process.env.OLLAMA_HOST || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
+}
+
+async function probeOllamaDirect(timeoutMs = 1200) {
+  try {
+    const resp = await fetch(`${getOllamaBaseUrl()}/api/tags`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!resp.ok) return { online: false, models: [] };
+    const data = await resp.json();
+    const models = Array.isArray(data?.models)
+      ? [...new Set(data.models.map((m) => String(m?.name || "").trim()).filter(Boolean))].sort()
+      : [];
+    return { online: true, models };
+  } catch {
+    return { online: false, models: [] };
+  }
+}
+
+function startOllamaServeHeadless() {
+  try {
+    const oll = resolveOllamaLaunch();
+    if (!oll) return false;
+    const pyExe = resolvePythonExecutable();
+    if (pyExe.toLowerCase().endsWith("pythonw.exe") && fs.existsSync(pyExe)) {
+      const pyCode = [
+        "import subprocess, sys",
+        "si = subprocess.STARTUPINFO()",
+        "si.dwFlags |= subprocess.STARTF_USESHOWWINDOW",
+        "si.wShowWindow = 0",
+        "subprocess.Popen([sys.argv[1], *sys.argv[2:]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=si, creationflags=0x08000200, close_fds=True)",
+      ].join("; ");
+      const p = spawn(pyExe, ["-c", pyCode, oll.exe, ...oll.args], { stdio: "ignore", windowsHide: true });
+      p.on("error", () => {});
+      p.unref();
+    } else {
+      const p = spawn(oll.exe, oll.args, { stdio: "ignore", windowsHide: true, detached: true });
+      p.on("error", () => {});
+      p.unref();
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureLocalBackendRunning(installedApps = []) {
   if (backendBootPromise) return backendBootPromise;
   backendBootPromise = (async () => {
-    try {
-      const r = await fetch("http://127.0.0.1:11434/api/tags", { signal: AbortSignal.timeout(1200) });
-      if (!r.ok) throw new Error("ollama not ready");
-    } catch {
-      try {
-        const oll = resolveOllamaLaunch();
-        if (oll) {
-          const pyExe = resolvePythonExecutable();
-          if (pyExe.toLowerCase().endsWith("pythonw.exe")) {
-            const pyCode = [
-              "import subprocess, sys",
-              "si = subprocess.STARTUPINFO()",
-              "si.dwFlags |= subprocess.STARTF_USESHOWWINDOW",
-              "si.wShowWindow = 0",
-              "subprocess.Popen([sys.argv[1], *sys.argv[2:]], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, startupinfo=si, creationflags=0x08000200, close_fds=True)",
-            ].join("; ");
-            const p = spawn(pyExe, ["-c", pyCode, oll.exe, ...oll.args], { stdio: "ignore", windowsHide: true });
-            p.on("error", () => {});
-            p.unref();
-          } else {
-            const p = spawn(oll.exe, oll.args, { stdio: "ignore", windowsHide: true });
-            p.on("error", () => {});
-            p.unref();
-          }
-        }
-      } catch {}
+    const ollProbe = await probeOllamaDirect(1100);
+    if (!ollProbe.online) {
+      startOllamaServeHeadless();
     }
 
     // 1. Check if a Black Sakura Jarvis-Hub backend is already running on any candidate port
@@ -222,15 +296,18 @@ async function ensureLocalBackendRunning(installedApps = []) {
       }
     }
 
-    // 2. Otherwise pick the first FREE port (avoids conflict if another app holds :8765) and boot uvicorn
+    // 2. Otherwise pick the first FREE port (avoids conflict if another local AI app holds :8765) and boot uvicorn
     if (!st?.ok) {
       try {
-        let chosenPort = activeBackendPort;
+        let chosenPort = null;
         for (const candPort of [...new Set([activeBackendPort, ...BACKEND_CANDIDATE_PORTS])]) {
           if (await isPortFree(candPort)) {
             chosenPort = candPort;
             break;
           }
+        }
+        if (!chosenPort) {
+          chosenPort = await pickEphemeralFreePort();
         }
         activeBackendPort = chosenPort;
         const pyExe = resolvePythonExecutable();
@@ -238,7 +315,12 @@ async function ensureLocalBackendRunning(installedApps = []) {
           localBackendProc = spawn(
             pyExe,
             ["-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", String(chosenPort)],
-            { cwd: WORKSPACE_ROOT, stdio: "ignore", windowsHide: true }
+            {
+              cwd: WORKSPACE_ROOT,
+              stdio: "ignore",
+              windowsHide: true,
+              env: { ...process.env, JARVIS_BACKEND_PORT: String(chosenPort) },
+            }
           );
           localBackendProc.on("error", () => {
             localBackendProc = null;
@@ -248,6 +330,7 @@ async function ensureLocalBackendRunning(installedApps = []) {
           });
         }
         for (let i = 0; i < 30; i++) {
+          if (isQuittingHub) break;
           await new Promise((r) => setTimeout(r, 400));
           st = await probeJarvisBackend(chosenPort, 1200);
           if (st?.ok) break;
@@ -280,6 +363,7 @@ const HIDE_FADE_MS = 350;
 
 let mainWindow = null;
 let setupWindow = null;
+let activeSetupProc = null;
 let tray = null;
 let hotkeyProc = null;
 let localBackendProc = null;
@@ -683,15 +767,17 @@ function hideHubWindow() {
   activityState.ignoreMouse = true;
   activityState.isDimmed = false;
   activityState.isFadingOut = false;
-  // Always resume wake-word detection whenever Hub hides to System Tray
-  if (hotkeyProc?.stdin?.writable) {
-    hotkeyProc.stdin.write('{"cmd":"pause_wake","paused":false}\n');
-  }
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.setIgnoreMouseEvents(true, { forward: true });
-    if (mainWindow.isVisible()) {
-      mainWindow.hide();
+  // Always resume wake-word detection whenever Hub hides to System Tray (guard broken pipe so hide NEVER fails)
+  try {
+    if (hotkeyProc?.stdin?.writable) {
+      hotkeyProc.stdin.write('{"cmd":"pause_wake","paused":false}\n');
     }
+  } catch {}
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      mainWindow.setIgnoreMouseEvents(true, { forward: true });
+      mainWindow.hide();
+    } catch {}
   }
   emitHud({ type: "hub_hidden" });
 }
@@ -1043,7 +1129,7 @@ function updateTrayMenu() {
     { type: "separator" },
     {
       label: "Thoát Jarvis Hub",
-      click: () => app.quit(),
+      click: () => forceQuitApp(),
     },
   ]);
   tray.setContextMenu(menu);
@@ -1095,9 +1181,109 @@ function createWindow() {
 
   mainWindow.setAlwaysOnTop(true, "screen-saver");
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  mainWindow.on("close", (e) => {
+    if (!isQuittingHub) {
+      e.preventDefault();
+      hideHubWindow();
+    }
+  });
   const distHtml = path.join(__dirname, "renderer", "dist", "index.html");
   mainWindow.loadFile(fs.existsSync(distHtml) ? distHtml : path.join(__dirname, "renderer", "index.html"));
   positionWindowTopCenter();
+}
+
+function emitSetupProgress(payload) {
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    try {
+      setupWindow.webContents.send("setup:progress", payload);
+    } catch {}
+  }
+}
+
+function cancelActiveSetupProc() {
+  const proc = activeSetupProc;
+  activeSetupProc = null;
+  if (!proc) return;
+  try {
+    if (proc.pid) {
+      execFile("taskkill", ["/F", "/T", "/PID", String(proc.pid)], { windowsHide: true }, () => {});
+    }
+    proc.kill();
+  } catch {}
+}
+
+function ensureMainHudStarted({ showNow = false, focus = false, reason = "boot" } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    if (showNow) {
+      mainWindow.once("ready-to-show", () => {
+        showHubWindow({ focus, reason });
+        emitHud({ type: "ready", ...getPublicState() });
+      });
+    }
+  } else if (showNow) {
+    showHubWindow({ focus, reason });
+    emitHud({ type: "ready", ...getPublicState() });
+  }
+  if (!hotkeyProc) {
+    startHotkeyHelper();
+  }
+}
+
+function forceQuitApp() {
+  if (isQuittingHub) return;
+  isQuittingHub = true;
+  clearTimeout(wakeRestartTimer);
+  clearInactivityTimers();
+  stopHoverSafetyPoll();
+  clearTimeout(displayDebounceTimer);
+  clearTimeout(crossDpiVerifyTimer);
+  abortInFlightBackendCalls();
+  cancelActiveSetupProc();
+  try {
+    screen.removeListener("display-added", scheduleDisplayChangeSync);
+    screen.removeListener("display-removed", scheduleDisplayChangeSync);
+    screen.removeListener("display-metrics-changed", scheduleDisplayChangeSync);
+  } catch {}
+  try {
+    if (setupWindow && !setupWindow.isDestroyed()) setupWindow.destroy();
+    setupWindow = null;
+  } catch {}
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    mainWindow = null;
+  } catch {}
+  try {
+    if (hotkeyProc?.stdin?.writable) {
+      hotkeyProc.stdin.write('{"cmd":"quit"}\n');
+    }
+  } catch {}
+  if (hotkeyProc?.pid) {
+    execFile("taskkill", ["/F", "/T", "/PID", String(hotkeyProc.pid)], { windowsHide: true }, () => {});
+  }
+  if (localBackendProc?.pid) {
+    execFile("taskkill", ["/F", "/T", "/PID", String(localBackendProc.pid)], { windowsHide: true }, () => {});
+  }
+  try {
+    hotkeyProc?.kill();
+  } catch {}
+  try {
+    agent?.closeLive();
+  } catch {}
+  try {
+    mcpHub?.closeAll();
+  } catch {}
+  try {
+    tray?.destroy();
+    tray = null;
+  } catch {}
+  app.quit();
+  // Failsafe so Electron NEVER hangs waiting on a stray handle/socket
+  setTimeout(() => {
+    try {
+      app.exit(0);
+    } catch {}
+  }, 450).unref?.();
 }
 
 function openSetupWizardWindow() {
@@ -1108,8 +1294,8 @@ function openSetupWizardWindow() {
   }
   const primary = screen.getPrimaryDisplay();
   const wa = primary.workArea;
-  const w = Math.min(720, Math.max(520, wa.width - 48));
-  const h = Math.min(690, Math.max(520, wa.height - 48));
+  const w = Math.min(760, Math.max(540, wa.width - 48));
+  const h = Math.min(720, Math.max(520, wa.height - 48));
   const icoPath = path.join(__dirname, "..", "jarvis.ico");
 
   setupWindow = new BrowserWindow({
@@ -1119,7 +1305,7 @@ function openSetupWizardWindow() {
     height: h,
     x: Math.round(wa.x + (wa.width - w) / 2),
     y: Math.round(wa.y + (wa.height - h) / 2),
-    minWidth: 500,
+    minWidth: 520,
     minHeight: 480,
     frame: true,
     autoHideMenuBar: true,
@@ -1153,8 +1339,13 @@ function openSetupWizardWindow() {
     }
   });
   setupWindow.on("closed", () => {
+    cancelActiveSetupProc();
     setupWindow = null;
-    // If user closed setup window after completing or dismissing, ensure HUD is accessible
+    // First run closed WITHOUT accepting & completing -> quit cleanly (never open Mini HUD or leave zombie process)
+    if (!isQuittingHub && !hubState.onboardingCompleted) {
+      forceQuitApp();
+      return;
+    }
     if (!isQuittingHub && hubState.onboardingCompleted && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
       showHubWindow({ focus: false, reason: "setup_closed" });
     }
@@ -1174,7 +1365,12 @@ function registerIpc() {
   ipcMain.handle("hub:get-setup-diagnostics", async () => {
     const pyExe = resolvePythonExecutable();
     const ollLaunch = resolveOllamaLaunch();
-    const backendStatus = await callLocalBackend("/status", null, 3500, true).catch(() => null);
+    // Kick off backend boot in background without blocking Setup Wizard UI for 12s
+    void ensureLocalBackendRunning(agent?.installedApps || []).catch(() => {});
+    const [backendStatus, ollamaDirect] = await Promise.all([
+      callLocalBackend("/status", null, 1800, false).catch(() => null),
+      probeOllamaDirect(1200).catch(() => ({ online: false, models: [] })),
+    ]);
     return {
       ok: true,
       displays: getAvailableDisplaysInfo(),
@@ -1183,10 +1379,224 @@ function registerIpc() {
       activeBackendPort,
       pythonExe: pyExe,
       pythonFound: pyExe === "python" ? true : fs.existsSync(pyExe),
-      ollamaInstalled: Boolean(ollLaunch || backendStatus?.ollama_installed),
+      ollamaInstalled: Boolean(ollLaunch || ollamaDirect.online || backendStatus?.ollama_installed),
+      ollamaOnline: Boolean(ollamaDirect.online || backendStatus?.ollama_online),
+      ollamaModels:
+        Array.isArray(backendStatus?.ollama_installed_models) && backendStatus.ollama_installed_models.length > 0
+          ? backendStatus.ollama_installed_models
+          : ollamaDirect.models,
       backendStatus: backendStatus && backendStatus.ok ? backendStatus : null,
       onboardingCompleted: hubState.onboardingCompleted === true,
     };
+  });
+
+  ipcMain.handle("hub:cancel-setup-task", () => {
+    cancelActiveSetupProc();
+    emitSetupProgress({ task: "cancelled", message: "Đã dừng tác vụ tải/cài đặt." });
+    return { ok: true };
+  });
+
+  ipcMain.handle("hub:install-ollama", async () => {
+    if (activeSetupProc) {
+      return { ok: false, error: "Đang có một tiến trình tải/cài đặt khác chạy. Hãy chờ xong hoặc bấm Dừng." };
+    }
+    const existing = resolveOllamaLaunch();
+    if (existing) {
+      emitSetupProgress({ task: "install-ollama", message: "Ollama đã có sẵn trên máy — đang khởi động nền..." });
+      startOllamaServeHeadless();
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const p = await probeOllamaDirect(1000);
+        if (p.online) {
+          emitSetupProgress({ task: "install-ollama", done: true, message: "Ollama đã sẵn sàng!" });
+          return { ok: true, alreadyInstalled: true, online: true };
+        }
+      }
+      return { ok: true, alreadyInstalled: true, online: false };
+    }
+
+    const cleanAnsi = (s) =>
+      String(s || "")
+        .replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, "")
+        .replace(/\r/g, "\n")
+        .trim();
+
+    // Strategy 1: Silent winget install; Strategy 2: Official OllamaSetup.exe download & run
+    emitSetupProgress({ task: "install-ollama", message: "Đang tải & cài đặt Ollama chính chủ (winget / OllamaSetup.exe)..." });
+    const runInstallPs = () =>
+      new Promise((resolve) => {
+        const script = [
+          "$ProgressPreference = 'SilentlyContinue'",
+          "if (Get-Command winget -ErrorAction SilentlyContinue) {",
+          "  Write-Output 'Dang cai Ollama qua Windows Package Manager (winget)...'",
+          "  winget install -e --id Ollama.Ollama --silent --accept-package-agreements --accept-source-agreements",
+          "  if ($LASTEXITCODE -eq 0) { Write-Output 'WINGET_OK'; exit 0 }",
+          "}",
+          "$tmp = Join-Path $env:TEMP 'OllamaSetup.exe'",
+          "Write-Output 'Dang tai trinh cai dat chinh chu tu ollama.com/download/OllamaSetup.exe...'",
+          "Invoke-WebRequest -Uri 'https://ollama.com/download/OllamaSetup.exe' -OutFile $tmp -UseBasicParsing",
+          "Write-Output 'Da tai xong OllamaSetup.exe! Dang chay trinh cai dat (vui long cho 30-60 giay)...'",
+          "$p = Start-Process -FilePath $tmp -ArgumentList '/VERYSILENT','/NORESTART' -PassThru -Wait",
+          "if ($p.ExitCode -ne 0) {",
+          "  Write-Output 'Dang mo giao dien cai dat Ollama de ban bam Install...'",
+          "  Start-Process -FilePath $tmp -Wait",
+          "}",
+          "Write-Output 'INSTALL_DONE'",
+        ].join("\n");
+
+        const proc = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], {
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        activeSetupProc = proc;
+        const onChunk = (buf) => {
+          const lines = cleanAnsi(buf.toString("utf8")).split("\n").map((l) => l.trim()).filter(Boolean);
+          for (const line of lines.slice(-3)) {
+            emitSetupProgress({ task: "install-ollama", message: line.slice(0, 180) });
+          }
+        };
+        proc.stdout?.on("data", onChunk);
+        proc.stderr?.on("data", onChunk);
+        proc.on("error", (err) => {
+          if (activeSetupProc === proc) activeSetupProc = null;
+          resolve({ ok: false, error: err.message });
+        });
+        proc.on("close", (code) => {
+          if (activeSetupProc === proc) activeSetupProc = null;
+          resolve({ ok: code === 0, code });
+        });
+      });
+
+    const installRes = await runInstallPs();
+    if (!installRes.ok && !resolveOllamaLaunch()) {
+      return {
+        ok: false,
+        error: "Không tự cài được Ollama (có thể thiếu quyền mạng/UAC). Bạn có thể bấm nút mở trang ollama.com/download để cài thủ công.",
+      };
+    }
+    emitSetupProgress({ task: "install-ollama", message: "Cài đặt xong — đang khởi động dịch vụ Ollama nền..." });
+    startOllamaServeHeadless();
+    for (let i = 0; i < 16; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const p = await probeOllamaDirect(1000);
+      if (p.online) {
+        emitSetupProgress({ task: "install-ollama", done: true, message: "Ollama đã cài và khởi động thành công!" });
+        return { ok: true, online: true };
+      }
+    }
+    return { ok: true, online: false, message: "Đã cài Ollama — hãy bấm Quét lại sau vài giây." };
+  });
+
+  ipcMain.handle("hub:pull-ollama-model", async (_evt, rawModel) => {
+    if (activeSetupProc) {
+      return { ok: false, error: "Đang có tác vụ tải khác chạy. Hãy chờ xong hoặc bấm Dừng." };
+    }
+    const modelName = String(rawModel || "").trim();
+    if (!/^[a-zA-Z0-9._:/-]{2,80}$/.test(modelName)) {
+      return { ok: false, error: "Tên model không hợp lệ (ví dụ: qwen3.5:4b, qwen3:1.7b, llama3.2:3b)." };
+    }
+    const oll = resolveOllamaLaunch();
+    const ollExe = oll ? oll.exe : "ollama";
+    const direct = await probeOllamaDirect(1000);
+    if (!direct.online) {
+      startOllamaServeHeadless();
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        if ((await probeOllamaDirect(900)).online) break;
+      }
+    }
+
+    const cleanAnsi = (s) =>
+      String(s || "")
+        .replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, "")
+        .replace(/\r/g, "\n");
+
+    emitSetupProgress({ task: "pull-model", model: modelName, message: `Đang tải model ${modelName} từ Ollama...` });
+    return await new Promise((resolve) => {
+      let lastLine = "";
+      const proc = spawn(ollExe, ["pull", modelName], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      activeSetupProc = proc;
+      const handleData = (buf) => {
+        const lines = cleanAnsi(buf.toString("utf8"))
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean);
+        if (lines.length > 0) {
+          lastLine = lines[lines.length - 1].slice(0, 180);
+          emitSetupProgress({ task: "pull-model", model: modelName, message: lastLine });
+        }
+      };
+      proc.stdout?.on("data", handleData);
+      proc.stderr?.on("data", handleData);
+      proc.on("error", () => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        resolve({ ok: false, error: "Không tìm thấy ollama.exe — hãy cài Ollama trước." });
+      });
+      proc.on("close", (code) => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        if (code === 0) {
+          emitSetupProgress({ task: "pull-model", model: modelName, done: true, message: `Đã tải xong model ${modelName}!` });
+          resolve({ ok: true, model: modelName });
+        } else {
+          resolve({ ok: false, error: lastLine || `Tải model ${modelName} thất bại (mã ${code}).` });
+        }
+      });
+    });
+  });
+
+  ipcMain.handle("hub:install-python-deps", async () => {
+    if (activeSetupProc) {
+      return { ok: false, error: "Đang có tác vụ cài đặt khác chạy." };
+    }
+    const reqFile = path.join(WORKSPACE_ROOT, "requirements.txt");
+    if (!fs.existsSync(reqFile)) {
+      return { ok: false, error: "Không tìm thấy file requirements.txt." };
+    }
+    let pyExe = resolvePythonExecutable();
+    if (pyExe.toLowerCase().endsWith("pythonw.exe")) {
+      const consolePy = pyExe.slice(0, -11) + "python.exe";
+      if (fs.existsSync(consolePy)) pyExe = consolePy;
+    }
+    emitSetupProgress({ task: "pip-install", message: "Đang chạy pip install -r requirements.txt..." });
+    const res = await new Promise((resolve) => {
+      let lastLine = "";
+      const proc = spawn(pyExe, ["-m", "pip", "install", "-r", reqFile], {
+        cwd: WORKSPACE_ROOT,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      activeSetupProc = proc;
+      const onChunk = (buf) => {
+        const lines = String(buf.toString("utf8"))
+          .replace(/\r/g, "\n")
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean);
+        if (lines.length > 0) {
+          lastLine = lines[lines.length - 1].slice(0, 180);
+          emitSetupProgress({ task: "pip-install", message: lastLine });
+        }
+      };
+      proc.stdout?.on("data", onChunk);
+      proc.stderr?.on("data", onChunk);
+      proc.on("error", () => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        resolve({ ok: false, error: "Không tìm thấy Python 3.10+ trên máy. Hãy cài Python trước." });
+      });
+      proc.on("close", (code) => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        resolve(code === 0 ? { ok: true } : { ok: false, error: lastLine || `pip install lỗi (mã ${code})` });
+      });
+    });
+    if (res.ok) {
+      emitSetupProgress({ task: "pip-install", message: "Cài thư viện Python xong — đang khởi động Backend..." });
+      await ensureLocalBackendRunning(agent?.installedApps || []).catch(() => {});
+      emitSetupProgress({ task: "pip-install", done: true, message: "Backend đã sẵn sàng!" });
+    }
+    return res;
   });
 
   ipcMain.handle("hub:open-external", async (_evt, rawUrl) => {
@@ -1236,14 +1646,14 @@ function registerIpc() {
     await callLocalBackend("/set-safety", { safety_mode: currentSafetyMode }, 2500, false).catch(() => {});
     saveHubState(hubState);
     updateTrayMenu();
-    positionWindowTopCenter();
-    emitHud({ type: "state_sync", ...getPublicState() });
 
+    // Close setup wizard first, then create/show the Mini HUD and start global wake/hotkey helper
     if (setupWindow && !setupWindow.isDestroyed()) {
       setupWindow.close();
     }
-    showHubWindow({ focus: true, reason: "onboarding_done" });
-    emitHud({ type: "ready", ...getPublicState() });
+    ensureMainHudStarted({ showNow: true, focus: true, reason: "onboarding_done" });
+    positionWindowTopCenter();
+    emitHud({ type: "state_sync", ...getPublicState() });
     return { ok: true };
   });
 
@@ -1792,6 +2202,10 @@ function registerIpc() {
   ipcMain.on("hub:hide", () => {
     hideHubWindow();
   });
+
+  ipcMain.on("hub:quit", () => {
+    forceQuitApp();
+  });
 }
 
 function scheduleDisplayChangeSync() {
@@ -1810,7 +2224,6 @@ if (process.platform === "win32") {
 // Keep Electron/Chromium V8 heap & cache lean for 24/7 tray residency
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=192");
 app.commandLine.appendSwitch("disable-http-cache");
-app.commandLine.appendSwitch("renderer-process-limit", "1");
 
 const gotSingleLock = app.requestSingleInstanceLock();
 if (!gotSingleLock) {
@@ -1819,6 +2232,10 @@ if (!gotSingleLock) {
 }
 
 app.on("second-instance", () => {
+  if (!hubState.onboardingCompleted) {
+    openSetupWizardWindow();
+    return;
+  }
   showHubWindow({ focus: true, reason: "second_instance" });
 });
 
@@ -1844,7 +2261,6 @@ app.whenReady().then(async () => {
   });
   agent.setVoiceReplyAlways(hubState.voiceReplyAlways);
 
-  createWindow();
   registerIpc();
 
   screen.on("display-added", scheduleDisplayChangeSync);
@@ -1855,62 +2271,34 @@ app.whenReady().then(async () => {
   tray.setToolTip(`Black Sakura Jarvis-Hub (${hubState.hotkey.toUpperCase()})`);
   updateTrayMenu();
   tray.on("click", () => {
-    if (!hubState.onboardingCompleted && setupWindow && !setupWindow.isDestroyed()) {
-      setupWindow.show();
-      setupWindow.focus();
+    if (!hubState.onboardingCompleted) {
+      openSetupWizardWindow();
       return;
     }
-    if (!mainWindow) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
     if (mainWindow.isVisible()) hideHubWindow();
     else showHubWindow({ focus: true, reason: "tray_click" });
   });
 
-  startHotkeyHelper();
   void ensureLocalBackendRunning(agent?.installedApps || []).catch(() => {});
 
-  // First-run: open full Setup Wizard window (permissions, security warning, display, Ollama/API) before mini HUD
+  // First-run ONLY: show full Setup Wizard window BEFORE creating Mini HUD or starting wake/hotkey listener.
+  // Once accepted & completed (onboardingCompleted === true), Setup Wizard never auto-opens again.
   if (!hubState.onboardingCompleted) {
     openSetupWizardWindow();
   } else {
-    mainWindow.once("ready-to-show", () => {
-      showHubWindow({ focus: false, reason: "boot" });
-      emitHud({ type: "ready", ...getPublicState() });
-    });
+    ensureMainHudStarted({ showNow: true, focus: false, reason: "boot" });
   }
 });
 
 app.on("before-quit", () => {
-  isQuittingHub = true;
-  clearTimeout(wakeRestartTimer);
-  clearInactivityTimers();
-  stopHoverSafetyPoll();
-  clearTimeout(displayDebounceTimer);
-  clearTimeout(crossDpiVerifyTimer);
-  try {
-    screen.removeListener("display-added", scheduleDisplayChangeSync);
-    screen.removeListener("display-removed", scheduleDisplayChangeSync);
-    screen.removeListener("display-metrics-changed", scheduleDisplayChangeSync);
-  } catch {}
-  try {
-    if (hotkeyProc?.stdin?.writable) {
-      hotkeyProc.stdin.write('{"cmd":"quit"}\n');
-    }
-  } catch {}
-  if (hotkeyProc?.pid) {
-    execFile("taskkill", ["/F", "/PID", String(hotkeyProc.pid)], { windowsHide: true }, () => {});
-  }
-  if (localBackendProc?.pid) {
-    execFile("taskkill", ["/F", "/PID", String(localBackendProc.pid)], { windowsHide: true }, () => {});
-  }
-  hotkeyProc?.kill();
-  agent?.closeLive();
-  mcpHub?.closeAll();
-  try {
-    tray?.destroy();
-    tray = null;
-  } catch {}
+  forceQuitApp();
 });
 
 app.on("window-all-closed", (e) => {
-  e.preventDefault(); // Stay running in System Tray
+  if (!hubState.onboardingCompleted || isQuittingHub) {
+    forceQuitApp();
+    return;
+  }
+  e.preventDefault(); // Stay running in System Tray once onboarding is complete
 });
