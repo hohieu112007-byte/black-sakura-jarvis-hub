@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 contextBridge.exposeInMainWorld("jarvisApi", {
   getInitialState: () => ipcRenderer.invoke("hub:get-state"),
   getBackendToken: () => ipcRenderer.invoke("hub:get-backend-token"),
+  backendRequest: (endpoint, body = null) => ipcRenderer.invoke("hub:backend-request", { endpoint, body }),
   sendPrompt: (text, context = null) => ipcRenderer.invoke("hub:send-prompt", { text, context }),
   sendVoiceWav: (wavBase64, hintTranscript = "", context = null) =>
     ipcRenderer.invoke("hub:send-voice-wav", { wavBase64, hintTranscript, context }),

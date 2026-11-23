@@ -318,9 +318,14 @@ export default function App() {
     const checkGaming = async () => {
       lastStatusCheckAtRef.current = Date.now();
       try {
-        const resp = await fetch("http://127.0.0.1:8765/status");
-        if (!resp.ok || !alive) return;
-        const data = await resp.json();
+        let data = null;
+        if (window.jarvisApi?.backendRequest) {
+          data = await window.jarvisApi.backendRequest("/status", null);
+        } else {
+          const resp = await fetch("http://127.0.0.1:8765/status");
+          if (resp.ok) data = await resp.json();
+        }
+        if (!data?.ok || !alive) return;
         const nextGaming = Boolean(data?.is_gaming);
         if (nextGaming && !prevGamingRef.current && sakugaOn) {
           sakugaCanvasRef.current?.triggerVramDissolve?.();

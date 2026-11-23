@@ -26,7 +26,28 @@ import {
 
 const LOCAL_BACKEND_URL = "http://127.0.0.1:8765";
 
+async function getLocalBackendStatus() {
+  if (window.jarvisApi?.backendRequest) {
+    const data = await window.jarvisApi.backendRequest("/status", null);
+    if (data && data.ok === true && typeof data.mcp_status === "object") return data;
+    return null;
+  }
+  const resp = await fetch(`${LOCAL_BACKEND_URL}/status`);
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data && data.ok === true && typeof data.mcp_status === "object" ? data : null;
+}
+
 async function postLocalBackend(endpoint, body = null) {
+  if (window.jarvisApi?.backendRequest) {
+    const data = await window.jarvisApi.backendRequest(endpoint, body === null ? {} : body);
+    const ok = Boolean(data && !data.__httpError && !data.__timeout && data.ok !== false);
+    return {
+      ok,
+      status: data?.__httpError || (ok ? 200 : 500),
+      json: async () => data,
+    };
+  }
   const buildOpts = (tok) => {
     const headers = {};
     if (body !== null) headers["Content-Type"] = "application/json";
@@ -152,15 +173,16 @@ export function SettingsDrawer({
 
   const refreshBackendStatus = async () => {
     try {
-      const resp = await fetch(`${LOCAL_BACKEND_URL}/status`);
-      if (resp.ok) {
-        const data = await resp.json();
+      const data = await getLocalBackendStatus();
+      if (data) {
         setBackendStatus(data);
         if (pendingSetRef.current === 0) {
           if (data?.keep_alive_setting) setKeepAliveSetting(data.keep_alive_setting);
           if (data?.thinking_mode) setThinkingMode(data.thinking_mode);
           if (data?.num_ctx) setNumCtx(Number(data.num_ctx));
         }
+      } else {
+        setBackendStatus(null);
       }
     } catch {
       setBackendStatus(null);

@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, clipboard } from "electron";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import zlib from "node:zlib";
 import readline from "node:readline";
@@ -19,10 +20,44 @@ import { McpHub } from "./mcp-hub.mjs";
 import { GeminiAgent } from "./gemini-agent.mjs";
 import { tryLocalFallbackCommand } from "./local-fallback.mjs";
 
-const LOCAL_BACKEND_URL = "http://127.0.0.1:8765";
+const BACKEND_CANDIDATE_PORTS = [
+  ...(Number(process.env.JARVIS_BACKEND_PORT) ? [Number(process.env.JARVIS_BACKEND_PORT)] : []),
+  8765,
+  18765,
+  18766,
+  18767,
+  18768,
+  18769,
+];
+let activeBackendPort = BACKEND_CANDIDATE_PORTS[0];
+const getLocalBackendUrl = () => `http://127.0.0.1:${activeBackendPort}`;
 const BACKEND_TOKEN_PATH = path.join(WORKSPACE_ROOT, "backend", ".session_token");
 let backendBootPromise = null;
 const activeBackendControllers = new Set();
+
+async function probeJarvisBackend(port, timeoutMs = 1200) {
+  try {
+    const resp = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data && data.ok === true && typeof data.mcp_status === "object") {
+      return data;
+    }
+  } catch {}
+  return null;
+}
+
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", () => resolve(false));
+    srv.once("listening", () => {
+      srv.close(() => resolve(true));
+    });
+    srv.listen(port, "127.0.0.1");
+  });
+}
 
 function readBackendSessionToken() {
   try {
@@ -54,13 +89,17 @@ async function callLocalBackend(endpoint, payload = null, timeoutMs = 90000, aut
       if (payload !== null) headers["Content-Type"] = "application/json";
       const token = readBackendSessionToken();
       if (token) headers["X-Jarvis-Token"] = token;
-      const resp = await fetch(`${LOCAL_BACKEND_URL}${endpoint}`, {
+      const resp = await fetch(`${getLocalBackendUrl()}${endpoint}`, {
         method: payload !== null ? "POST" : "GET",
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: payload !== null ? JSON.stringify(payload) : undefined,
         signal: ctrl.signal,
       });
       if (!resp.ok) {
+        if (resp.status === 404 && endpoint === "/status") {
+          // Another unrelated service is occupying this port; trigger free-port fallback
+          return null;
+        }
         let serverDetail = "";
         try {
           const errBody = await resp.json();
@@ -69,16 +108,20 @@ async function callLocalBackend(endpoint, payload = null, timeoutMs = 90000, aut
         return {
           ok: false,
           __httpError: resp.status,
-          error: serverDetail || `Backend (:8765) trả về lỗi HTTP ${resp.status}`,
+          error: serverDetail || `Backend (:${activeBackendPort}) trả về lỗi HTTP ${resp.status}`,
         };
       }
-      return await resp.json();
+      const data = await resp.json();
+      if (endpoint === "/status" && !(data && data.ok === true && typeof data.mcp_status === "object")) {
+        return null;
+      }
+      return data;
     } catch (err) {
       if (err?.name === "AbortError") {
         if (entry.cancelledByWake) {
           return { ok: false, __cancelled: true, cancelled: true };
         }
-        return { ok: false, __timeout: true, error: "Backend (:8765) xử lý quá lâu — thử lại nhé." };
+        return { ok: false, __timeout: true, error: `Backend (:${activeBackendPort}) xử lý quá lâu — thử lại nhé.` };
       }
       return null; // Connection refused / unreachable
     } finally {
@@ -88,7 +131,7 @@ async function callLocalBackend(endpoint, payload = null, timeoutMs = 90000, aut
   };
 
   let res = await attempt();
-  if (res === null && autoBoot) {
+  if ((res === null || res?.__httpError === 404 || res?.__httpError === 405) && autoBoot) {
     await ensureLocalBackendRunning().catch(() => {});
     res = await attempt();
   }
@@ -168,23 +211,45 @@ async function ensureLocalBackendRunning(installedApps = []) {
       } catch {}
     }
 
-    let st = await callLocalBackend("/status", null, 1500, false);
+    // 1. Check if a Black Sakura Jarvis-Hub backend is already running on any candidate port
+    let st = null;
+    for (const p of [...new Set([activeBackendPort, ...BACKEND_CANDIDATE_PORTS])]) {
+      const probed = await probeJarvisBackend(p, 1200);
+      if (probed) {
+        activeBackendPort = p;
+        st = probed;
+        break;
+      }
+    }
+
+    // 2. Otherwise pick the first FREE port (avoids conflict if another app holds :8765) and boot uvicorn
     if (!st?.ok) {
       try {
+        let chosenPort = activeBackendPort;
+        for (const candPort of [...new Set([activeBackendPort, ...BACKEND_CANDIDATE_PORTS])]) {
+          if (await isPortFree(candPort)) {
+            chosenPort = candPort;
+            break;
+          }
+        }
+        activeBackendPort = chosenPort;
         const pyExe = resolvePythonExecutable();
         if (!localBackendProc) {
           localBackendProc = spawn(
             pyExe,
-            ["-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", "8765"],
+            ["-m", "uvicorn", "backend.server:app", "--host", "127.0.0.1", "--port", String(chosenPort)],
             { cwd: WORKSPACE_ROOT, stdio: "ignore", windowsHide: true }
           );
+          localBackendProc.on("error", () => {
+            localBackendProc = null;
+          });
           localBackendProc.on("exit", () => {
             localBackendProc = null;
           });
         }
-        for (let i = 0; i < 28; i++) {
+        for (let i = 0; i < 30; i++) {
           await new Promise((r) => setTimeout(r, 400));
-          st = await callLocalBackend("/status", null, 1500, false);
+          st = await probeJarvisBackend(chosenPort, 1200);
           if (st?.ok) break;
         }
       } catch {}
@@ -992,6 +1057,12 @@ function createWindow() {
 function registerIpc() {
   ipcMain.handle("hub:get-state", () => getPublicState());
   ipcMain.handle("hub:get-backend-token", () => readBackendSessionToken());
+  ipcMain.handle("hub:backend-request", async (_evt, { endpoint, body = null } = {}) => {
+    const ep = String(endpoint || "").trim();
+    if (!ep.startsWith("/")) return { ok: false, error: "Invalid endpoint" };
+    const res = await callLocalBackend(ep, body, 15000, ep === "/status");
+    return res || { ok: false, error: "Backend (:8765) chưa phản hồi" };
+  });
 
   ipcMain.handle("hub:send-prompt", async (_evt, rawPayload) => {
     const isObj = rawPayload && typeof rawPayload === "object";

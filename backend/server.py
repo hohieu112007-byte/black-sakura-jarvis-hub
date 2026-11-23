@@ -45,17 +45,29 @@ app = FastAPI(title="Black Sakura Jarvis-Hub Local Backend", version="1.0.0", li
 
 BACKEND_ERR_LOG = Path(__file__).resolve().parent / "backend_error.log"
 SESSION_TOKEN_PATH = Path(__file__).resolve().parent / ".session_token"
-_LOCAL_ORIGIN_RE = re.compile(r"^https?://(?:127\.0\.0\.1|localhost)(?::\d+)?$", re.IGNORECASE)
+_LOCAL_ORIGIN_RE = re.compile(r"^(?:https?://(?:127\.0\.0\.1|localhost)(?::\d+)?|file://.*)$", re.IGNORECASE)
 _ALLOWED_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
 
 
 def _init_session_token() -> str:
     env_tok = os.environ.get("JARVIS_API_TOKEN", "").strip()
-    tok = env_tok if len(env_tok) >= 16 else secrets.token_hex(32)
+    if len(env_tok) >= 16:
+        tok = env_tok
+    else:
+        existing = ""
+        try:
+            if SESSION_TOKEN_PATH.is_file():
+                cand = SESSION_TOKEN_PATH.read_text(encoding="utf-8").strip()
+                if re.fullmatch(r"[A-Za-z0-9_\-]{32,128}", cand):
+                    existing = cand
+        except Exception:
+            pass
+        tok = existing or secrets.token_hex(32)
     try:
-        tmp = SESSION_TOKEN_PATH.with_suffix(".tmp")
-        tmp.write_text(tok, encoding="utf-8")
-        tmp.replace(SESSION_TOKEN_PATH)
+        if not SESSION_TOKEN_PATH.is_file() or SESSION_TOKEN_PATH.read_text(encoding="utf-8").strip() != tok:
+            tmp = SESSION_TOKEN_PATH.with_suffix(".tmp")
+            tmp.write_text(tok, encoding="utf-8")
+            tmp.replace(SESSION_TOKEN_PATH)
     except Exception:
         pass
     return tok
@@ -73,7 +85,7 @@ async def local_security_middleware(request: Request, call_next):
         if host_only not in _ALLOWED_HOSTS:
             return JSONResponse(status_code=403, content={"ok": False, "error": "Blocked non-localhost Host header."})
 
-    # 2. Cross-Origin guard: reject requests from external http(s) websites
+    # 2. Cross-Origin guard: reject requests from external http(s) websites (allow localhost, Electron file://, null)
     origin = (request.headers.get("origin") or "").strip()
     if origin and origin != "null" and not _LOCAL_ORIGIN_RE.match(origin):
         return JSONResponse(status_code=403, content={"ok": False, "error": "Blocked cross-origin request."})
@@ -93,13 +105,7 @@ async def local_security_middleware(request: Request, call_next):
 # CORSMiddleware added after local_security_middleware so it wraps responses & handles preflight cleanly
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://127.0.0.1:4173",
-        "http://localhost:4173",
-        "null",
-    ],
+    allow_origin_regex=r"^(?:https?://(?:127\.0\.0\.1|localhost)(?::\d+)?|file://.*|null)$",
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "X-Jarvis-Token"],
