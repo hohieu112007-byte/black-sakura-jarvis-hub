@@ -437,8 +437,8 @@ def _select_tools_for_prompt(
                     names.append(n)
         return _tools_from_names(names[:15])
 
-    if _word_match(low, r"viết\s+code|lập\s+trình|sửa\s+code|debug|refactor|antigravity"):
-        return _tools_from_names(("handoff_to_antigravity", "list_windows", "launch_app", "window_control", "desktop_screenshot"))
+    if _word_match(low, r"viết\s+code|lập\s+trình|sửa\s+code|debug|refactor"):
+        return _tools_from_names(("list_windows", "launch_app", "window_control", "desktop_screenshot", "uia_read"))
 
     if _word_match(low, r"nhắn|gửi|gõ|nhập|chat|bấm|nhấn|chọn\s+(?:nhóm|kênh)"):
         return _tools_from_names(_DEEP_UI_TOOL_NAMES)
@@ -2979,11 +2979,11 @@ class VramRouter:
                 or multi_incomplete
                 or (self._is_hard_task(clean) and local_res.get("route") == "local_chat")
             )
-            # If local failed / incomplete multi-step / hard task and Tier 3 Cloud API is enabled -> try API BEFORE Antigravity (skip on timeout)
+            # Final Tier 3: Cloud Gemini API Key fallback (no Antigravity handoff in public release)
             if should_try_api and self.api_fallback_enabled:
                 api_res = self._try_api_fallback(
                     clean,
-                    timeout_sec=10.0,
+                    timeout_sec=12.0,
                     with_tools=True,
                     safety_mode=safety_mode,
                     approved=approved,
@@ -2991,20 +2991,26 @@ class VramRouter:
                 if api_res is not None:
                     return api_res
             if (not local_res.get("ok") and self._is_hard_task(clean)) or multi_incomplete:
-                return self._handoff_to_antigravity_with_guard(
-                    clean,
-                    context=context,
-                    approved=approved,
-                    model_used=local_res.get("model_used"),
-                    reply_when_queued="Tác vụ nhiều bước / ca khó vượt quá Local AI (API tắt hoặc timeout); đã xếp hàng sang Antigravity.",
-                    tier=4,
-                )
+                has_key = bool(self._read_gemini_api_key())
+                if not self.api_fallback_enabled:
+                    tip = "Tác vụ phức tạp vượt quá AI Local. Hãy bật Cloud Gemini API và nhập API Key trong Cài đặt để xử lý ở tầng cuối."
+                elif not has_key:
+                    tip = "Tác vụ phức tạp vượt quá AI Local. Bạn đã bật Cloud API nhưng chưa nhập GEMINI_API_KEY trong Cài đặt."
+                else:
+                    tip = "Tác vụ phức tạp vượt quá AI Local và Cloud Gemini API hiện chưa phản hồi (timeout/hết hạn mức). Vui lòng thử lại."
+                return {
+                    **local_res,
+                    "ok": False,
+                    "tier": 3,
+                    "route": "gemini_api_fallback",
+                    "reply": tip,
+                }
             return local_res
         except Exception as ollama_err:
             if self.api_fallback_enabled:
                 api_res = self._try_api_fallback(
                     clean,
-                    timeout_sec=10.0,
+                    timeout_sec=12.0,
                     with_tools=True,
                     safety_mode=safety_mode,
                     approved=approved,
@@ -3020,16 +3026,21 @@ class VramRouter:
                     "reply": (
                         "Máy chưa cài Ollama cho AI Local Tầng 2 (Tầng 1 điều khiển nhanh vẫn hoạt động bình thường). "
                         "Bạn có thể cài Ollama tại https://ollama.com rồi chạy 'ollama pull qwen3.5:4b', "
-                        "hoặc bật Cloud Gemini API trong Cài đặt."
+                        "hoặc bật Cloud Gemini API và nhập API Key trong Cài đặt."
                     ),
                 }
-            return self._handoff_to_antigravity_with_guard(
-                clean,
-                context={**(context or {}), "ollama_fallback_reason": str(ollama_err)},
-                approved=approved,
-                reply_when_queued=f"Local AI chưa phản hồi ({ollama_err}); đã xếp hàng sang Antigravity Bridge.",
-                tier=4,
+            has_key = bool(self._read_gemini_api_key())
+            hint = (
+                "Hãy kiểm tra Ollama đang chạy hoặc kiểm tra lại GEMINI_API_KEY / kết nối mạng."
+                if (self.api_fallback_enabled and has_key)
+                else "Hãy bật Ollama hoặc bật Cloud Gemini API + nhập API Key trong Cài đặt."
             )
+            return {
+                "ok": False,
+                "tier": 3,
+                "route": "gemini_api_fallback",
+                "reply": f"AI Local (Ollama) chưa phản hồi ({ollama_err}). {hint}",
+            }
 
     def handle_dictation_text(self, raw_text: str, auto_type: bool = True) -> Dict[str, Any]:
         clean = re.sub(r"\s+", " ", str(raw_text or "").strip())

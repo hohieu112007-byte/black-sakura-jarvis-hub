@@ -8,12 +8,11 @@ Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**L
 
 ## Tính năng nổi bật
 
-- **Kiến trúc định tuyến 4 tầng (4-Tier Routing):**
+- **Kiến trúc định tuyến 3 tầng (3-Tier Routing — Tầng cuối là Cloud API Key):**
   - **Tầng 1 — Fast-Path Win32/UIA (`<50ms`, `0 MB VRAM`):** Mở/đóng app & tab web (Edge, Chrome, Brave, Cốc Cốc, Firefox, Opera), đóng cả tab lẫn app (`"đóng cả hai cái facebook mới mở"`), chuyển màn hình 1/2/màn còn lại, phóng to/thu nhỏ cửa sổ đang focus, tăng/giảm âm lượng & độ sáng, điều khiển nhạc, tìm kiếm YouTube/Google, tua video, lệnh ghép (`"rồi"`, `"và"`).
   - **Tầng 2 — Local AI Agent (Ollama):** Tự động nhận diện **mọi model đã cài trên Ollama** (`qwen3.5:4b`, `qwen3:1.7b`, `qwen3:0.6b`, `llama3.2:3b`, `gemma3:4b`, `qwen2.5:7b`...), tự động lọc gọn tool theo ngữ cảnh, nén cây UI, và quản lý VRAM thông minh (`0s`, `1m`, `2m`, `5m`, `15m`, `always` + Game Mode tự xả VRAM).
   - **Tầng 2.5 — Vision Click dự phòng:** Lưới 10×10 miễn phí VRAM hoặc bật **OmniParser V2** (lazy-load vào VRAM chỉ lúc UIA bấm trượt).
-  - **Tầng 3 — Cloud Gemini API (Tùy chọn, tắt mặc định):** Dành cho người chưa cài Ollama hoặc máy yếu cần dự phòng tác vụ khó.
-  - **Tầng 4 — Antigravity Bridge:** Xếp hàng tác vụ lập trình/đa bước phức tạp sang `bridge_queue/task_inbox.json`.
+  - **Tầng 3 (Tầng cuối) — Cloud Gemini API Key (Tùy chọn, tắt mặc định):** Xử lý các tác vụ nhiều bước / ca khó khi AI Local không đáp ứng hoặc máy chưa cài Ollama — chỉ cần nhập `GEMINI_API_KEY` trong Cài đặt hoặc `.env`.
 - **Chạy tốt kể cả khi chưa cài Ollama:** Tầng 1 điều khiển Windows/trình duyệt chạy ngay lập tức mà không cần Ollama hay GPU rời; khi cần suy luận sâu có thể bật Cloud Gemini API hoặc cài Ollama sau.
 - **Đóng gói `.exe` portable tiện lợi:** Chạy `build_exe.bat` để tạo thư mục portable chứa **`BlackSakuraJarvisHub.exe`** bấm đúp chạy ngay (hoặc tải bản build tự động từ GitHub Actions).
 
@@ -89,7 +88,7 @@ copy .env.example .env
 
 ```text
 black-sakura-jarvis-hub/
-├── backend/                  # FastAPI server, 4-tier VRAM router, daily scenarios, Win32 native, STT/TTS
+├── backend/                  # FastAPI server, 3-tier VRAM router, daily scenarios, Win32 native, STT/TTS
 ├── fast-desktop-mcp/         # MCP server điều khiển Windows/UIA/Edge/Word (Node.js + PowerShell, 0 deps)
 ├── jarvis-hub/               # Giao diện nổi Electron + React + Tailwind + script đóng gói .exe
 ├── docs/                     # Hướng dẫn cài đặt (SETUP_GUIDE.md) & mẫu GitHub Actions build .exe

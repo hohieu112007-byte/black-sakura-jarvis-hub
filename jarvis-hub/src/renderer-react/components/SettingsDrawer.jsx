@@ -938,7 +938,7 @@ export function SettingsDrawer({
                   <div className="text-[10.5px] font-medium text-zinc-600">
                     {apiFallbackOn
                       ? apiKeyReady
-                        ? "Đang BẬT · Chạy trước Antigravity"
+                        ? "Đang BẬT · Tầng cuối dự phòng (API Key)"
                         : "Đã BẬT · Chưa có GEMINI_API_KEY"
                       : "Đang TẮT · Chỉ chạy Local AI"}
                   </div>
