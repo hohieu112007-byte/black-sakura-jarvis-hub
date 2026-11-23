@@ -25,7 +25,23 @@ Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**L
 
 ---
 
-## Tính năng nổi bật
+## Black Sakura Jarvis-Hub làm được gì trong công việc hàng ngày?
+
+> Xem cẩm nang lệnh đầy đủ và mẹo sử dụng từng tính năng tại **[Hướng Dẫn Sử Dụng (docs/USER_GUIDE.md)](docs/USER_GUIDE.md)** và hướng dẫn cài đặt chi tiết tại **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**.
+
+| Nhóm tác vụ hàng ngày | Ví dụ câu lệnh tự nhiên (Gõ hoặc Nói `"Hey Luna..."`) | Cơ chế xử lý |
+| --- | --- | --- |
+| **Mở / Đóng app & Đa màn hình** | `"mở Discord trên màn phụ"`, `"chuyển cửa sổ sang màn 2"`, `"chia đôi màn hình trái"`, `"phóng to"`, `"mở Steam rồi chuyển sang màn 2"` | **Tầng 1 Win32** (`<50ms`, `0 MB VRAM`) |
+| **Quản lý Tab & Trình duyệt thông minh** | `"đóng tab facebook"`, `"đóng app facebook"`, `"đóng cả hai cái facebook mới mở"`, `"đóng cái vừa mở"`, `"giữ lại tab YouTube đóng các tab khác"`, `"tìm chữ bảo hành trên trang"` | **Tầng 1** (Edge, Chrome, Brave, Cốc Cốc, Firefox, Opera) |
+| **YouTube, Nhạc & Giải trí** | `"mở YouTube tìm nhạc lofi"`, `"chọn video đầu tiên"`, `"chọn video của kênh Trúc Nhân"`, `"tua thêm 2 phút"`, `"tua đến phút thứ 5"`, `"bật phụ đề"`, `"toàn màn hình"` | **Tầng 1 UIA / Slider** |
+| **Discord & Gaming (`Party Mode`)** | `"tắt mic Discord"`, `"bật loa Discord"`, `"share màn hình 2 trên Discord"`, `"Party mode"` *(tự mở Steam + Web + Discord lên màn phụ)* | **Tầng 1 + Game Guard** (tự xả VRAM khi vào game) |
+| **Hệ thống Windows** | `"tăng âm lượng"`, `"đặt độ sáng 60%"`, `"cuộn xuống"`, `"gõ ... vào Notepad"`, `"bấm nút ... trên ..."` | **Tầng 1 / Tầng 2 UIA** |
+| **Tài liệu, Ảnh & Xuất Word** | Kéo-thả hoặc `Ctrl+V` ảnh/PDF/Word/Excel/code rồi hỏi `"tóm tắt file này"`, `"trên màn hình đang mở gì?"`, `"tóm tắt video YouTube đang mở"`, `"xuất file word ..."` | **Vision + Context Engine + Export `.docx`** |
+| **Suy luận phức tạp / Web nhiều bước** | Câu hỏi đa bước, tự động hóa trong app/web, giải bài/phân tích | **Tầng 2 Ollama Local** -> **Tầng 3 Cloud Gemini API Key** |
+
+---
+
+## Kiến trúc & Tính năng nổi bật
 
 - **Kiến trúc định tuyến 3 tầng (3-Tier Routing — Tầng cuối là Cloud API Key):**
   - **Tầng 1 — Fast-Path Win32/UIA (`<50ms`, `0 MB VRAM`):** Mở/đóng app & tab web (Edge, Chrome, Brave, Cốc Cốc, Firefox, Opera), đóng cả tab lẫn app (`"đóng cả hai cái facebook mới mở"`), chuyển màn hình 1/2/màn còn lại, phóng to/thu nhỏ cửa sổ đang focus, tăng/giảm âm lượng & độ sáng, điều khiển nhạc, tìm kiếm YouTube/Google, tua video, lệnh ghép (`"rồi"`, `"và"`).
@@ -56,14 +72,18 @@ Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**L
 
 ### Cách nhanh nhất: Tải 1 gói Portable `.zip` (có sẵn `BlackSakuraJarvisHub.exe`)
 1. Tải file **`Black-Sakura-Jarvis-Hub-v1.0.0-Windows-Portable.zip`** tại **[GitHub Releases](https://github.com/hohieu112007-byte/black-sakura-jarvis-hub/releases/latest)** và giải nén.
-2. *(Chỉ làm 1 lần)* Cài thư viện Python: `pip install -r requirements.txt` (cần Python 3.10+).
-3. Bấm đúp **`BlackSakuraJarvisHub.exe`** — cửa sổ **Setup Wizard** sẽ tự mở để hướng dẫn quyền, kiểm tra màn hình/GPU/Ollama và cấu hình trước khi thu gọn thành Mini HUD.
+2. *(Chỉ làm 1 lần)* Cài thư viện Python: `pip install -r requirements.txt` (cần Python 3.10+). *(Hoặc bấm nút **"Cài Python Deps"** 1 chạm ngay bên trong cửa sổ Setup Wizard).*
+3. Bấm đúp **`BlackSakuraJarvisHub.exe`** — cửa sổ **Setup Wizard** sẽ tự mở để hướng dẫn quyền, tự nhận diện màn hình/GPU, hỗ trợ tải 1 chạm **Ollama + Model** hoặc nhập API Key trước khi thu gọn thành Mini HUD.
+
+> Tài liệu đi kèm ngay trên GitHub và bên trong gói tải về:
+> - **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** — Hướng dẫn sử dụng Mini HUD & danh sách câu lệnh tác vụ hàng ngày
+> - **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — Hướng dẫn cài đặt cho từng cấu hình máy (GPU, CPU-only, chưa có Ollama, build `.exe`)
 
 ---
 
 ### Cách 2: Chạy từ mã nguồn (Developer)
 
-Xem hướng dẫn chi tiết từng bước (bao gồm máy chưa có Ollama, máy không có GPU rời, và đổi model) tại **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**.
+Xem hướng dẫn chi tiết từng bước tại **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** và **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)**.
 
 ### Yêu cầu cơ bản
 - **Windows 10 / 11 (64-bit)**
@@ -121,7 +141,7 @@ black-sakura-jarvis-hub/
 ├── backend/                  # FastAPI server, 3-tier VRAM router, daily scenarios, Win32 native, STT/TTS
 ├── fast-desktop-mcp/         # MCP server điều khiển Windows/UIA/Edge/Word (Node.js + PowerShell, 0 deps)
 ├── jarvis-hub/               # Giao diện nổi Electron + React + Tailwind + script đóng gói .exe
-├── docs/                     # Hướng dẫn cài đặt (SETUP_GUIDE.md) & mẫu GitHub Actions build .exe
+├── docs/                     # Hướng dẫn sử dụng (USER_GUIDE.md), cài đặt (SETUP_GUIDE.md), ảnh demo & GitHub Actions
 ├── start_backend.bat         # Khởi chạy Backend (tự tìm .venv / Python 3.10–3.13 & Ollama)
 ├── build_exe.bat             # Đóng gói nhanh BlackSakuraJarvisHub.exe
 ├── requirements.txt          # Danh sách thư viện Python

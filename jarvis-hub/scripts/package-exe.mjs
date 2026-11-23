@@ -143,6 +143,13 @@ for (const rootFile of ["requirements.txt", ".env.example", "start_backend.bat",
     fs.copyFileSync(srcPath, path.join(OUT_ROOT, rootFile));
   }
 }
+for (const docFile of ["USER_GUIDE.md", "SETUP_GUIDE.md"]) {
+  const docSrc = path.join(ROOT_DIR, "docs", docFile);
+  if (fs.existsSync(docSrc)) {
+    fs.mkdirSync(path.join(OUT_ROOT, "docs"), { recursive: true });
+    fs.copyFileSync(docSrc, path.join(OUT_ROOT, "docs", docFile));
+  }
+}
 
 // 7. Write quickstart guide inside the portable pack
 const quickstartTxt = [
