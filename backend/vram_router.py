@@ -531,9 +531,10 @@ def _is_multi_step_command(text: str) -> bool:
     return False
 
 
-def _build_gemini_function_declarations() -> List[Dict[str, Any]]:
+def _build_gemini_function_declarations(tools_subset: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    source_tools = tools_subset if tools_subset is not None else LOCAL_AGENT_TOOLS
     decls: List[Dict[str, Any]] = []
-    for item in LOCAL_AGENT_TOOLS:
+    for item in source_tools:
         fn = item.get("function") or {}
         name = str(fn.get("name") or "").strip()
         if not name or name == "handoff_to_antigravity":
@@ -985,6 +986,8 @@ class VramRouter:
         self._tags_cache_online: bool = False
         self._tags_cache_vision: bool = False
         self._tags_cache_models: List[str] = []
+        self._last_api_error: str = ""
+        self._last_api_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
 
         self.stt = STTEngine(
             model_size="turbo",
@@ -1141,11 +1144,17 @@ class VramRouter:
             return True
         return False
 
-    def _read_gemini_api_key(self) -> str:
-        for var in ("GEMINI_API_KEY", "GOOGLE_API_KEY"):
-            val = os.environ.get(var, "").strip()
-            if val:
-                return val
+    def _read_gemini_api_keys(self) -> List[str]:
+        keys: List[str] = []
+
+        def _add_raw(raw_val: str) -> None:
+            for tok in re.split(r"[,;\r\n]+", str(raw_val or "")):
+                k = tok.strip().strip("\"'")
+                if len(k) >= 16 and k not in keys:
+                    keys.append(k)
+
+        for var in ("GEMINI_API_KEYS", "GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GOOGLE_API_KEY"):
+            _add_raw(os.environ.get(var, ""))
         if ENV_PATH.exists():
             try:
                 for line in ENV_PATH.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -1153,32 +1162,117 @@ class VramRouter:
                     if not s or s.startswith("#") or "=" not in s:
                         continue
                     k, v = s.split("=", 1)
-                    if k.strip() in ("GEMINI_API_KEY", "GEMINI_API_KEYS", "GOOGLE_API_KEY"):
-                        first = v.strip().strip("\"'").split(",")[0].strip()
-                        if first:
-                            return first
+                    if k.strip() in ("GEMINI_API_KEYS", "GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3", "GOOGLE_API_KEY"):
+                        _add_raw(v)
             except Exception:
                 pass
-        return ""
+        return keys
+
+    def _read_gemini_api_key(self) -> str:
+        keys = self._read_gemini_api_keys()
+        return keys[0] if keys else ""
 
     def set_api_fallback(self, enabled: bool, api_key: Optional[str] = None) -> Dict[str, Any]:
         with self._lock:
             self.api_fallback_enabled = bool(enabled)
-            clean_key = str(api_key or "").strip()
-            if clean_key:
-                if any(ch in clean_key for ch in ("\r", "\n", "\x00")) or not re.fullmatch(r"[A-Za-z0-9_\-]{16,128}", clean_key):
+            raw_input = str(api_key or "").strip()
+            if raw_input:
+                if any(ch in raw_input for ch in ("\r", "\n", "\x00")):
+                    raise ValueError("API key không hợp lệ (không được chứa ký tự xuống dòng).")
+                parsed_keys = [k.strip() for k in raw_input.split(",") if k.strip()]
+                if not parsed_keys or not all(re.fullmatch(r"[A-Za-z0-9_\-]{16,128}", k) for k in parsed_keys):
                     raise ValueError("API key không hợp lệ (chỉ chấp nhận ký tự A-Z, a-z, 0-9, _ và -).")
                 lines: List[str] = []
                 if ENV_PATH.exists():
                     lines = [
                         l for l in ENV_PATH.read_text(encoding="utf-8", errors="ignore").splitlines()
-                        if not l.strip().startswith("GEMINI_API_KEY=")
+                        if not l.strip().startswith("GEMINI_API_KEY=") and not l.strip().startswith("GEMINI_API_KEYS=")
                     ]
-                lines.append(f"GEMINI_API_KEY={clean_key}")
+                lines.append(f"GEMINI_API_KEY={parsed_keys[0]}")
+                if len(parsed_keys) > 1:
+                    lines.append(f"GEMINI_API_KEYS={','.join(parsed_keys)}")
                 ENV_PATH.write_text("\n".join(l for l in lines if l.strip()) + "\n", encoding="utf-8")
-                os.environ["GEMINI_API_KEY"] = clean_key
+                os.environ["GEMINI_API_KEY"] = parsed_keys[0]
+                if len(parsed_keys) > 1:
+                    os.environ["GEMINI_API_KEYS"] = ",".join(parsed_keys)
+                else:
+                    os.environ.pop("GEMINI_API_KEYS", None)
+                self._last_api_error = ""
             self._save_config()
         return self.get_status()
+
+    def _gemini_model_chain(self) -> List[str]:
+        preferred = os.environ.get("GEMINI_MODEL", "").strip()
+        base = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"]
+        chain: List[str] = []
+        for m in ([preferred] if preferred else []) + base:
+            if m and m not in chain:
+                chain.append(m)
+        return chain
+
+    def _post_gemini_with_failover(
+        self,
+        payload: Dict[str, Any],
+        timeout_sec: float,
+        *,
+        hard_task: bool = False,
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """Call Gemini REST API via persistent session with multi-key rotation & model failover."""
+        api_keys = self._read_gemini_api_keys()
+        if not api_keys:
+            self._last_api_error = "Chưa có GEMINI_API_KEY."
+            return None, ""
+
+        models = self._gemini_model_chain()
+        last_err = ""
+        for model_id in models:
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+            req_payload = dict(payload)
+            gen_cfg = dict(req_payload.get("generationConfig") or {})
+            if model_id.startswith("gemini-2.5"):
+                gen_cfg["thinkingConfig"] = {"thinkingBudget": 1024 if hard_task else 0}
+                if hard_task and int(gen_cfg.get("maxOutputTokens") or 0) < 2048:
+                    gen_cfg["maxOutputTokens"] = 2048
+            else:
+                gen_cfg.pop("thinkingConfig", None)
+            req_payload["generationConfig"] = gen_cfg
+
+            for idx, key in enumerate(api_keys):
+                try:
+                    resp = self._http.post(
+                        endpoint,
+                        headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                        json=req_payload,
+                        timeout=(3.0, max(2.5, float(timeout_sec))),
+                    )
+                    if resp.ok:
+                        self._last_api_error = ""
+                        self._last_api_model = model_id
+                        return resp.json(), model_id
+                    code = int(resp.status_code)
+                    if code in (401, 403):
+                        last_err = f"API Key #{idx + 1} bị từ chối (HTTP {code})."
+                        continue
+                    if code == 429:
+                        last_err = f"API Key #{idx + 1} / {model_id} tạm hết hạn mức (HTTP 429)."
+                        continue
+                    if code == 404:
+                        last_err = f"Model {model_id} không khả dụng (HTTP 404)."
+                        break  # try next model in chain
+                    if code >= 500:
+                        last_err = f"Gemini server bận ({model_id}, HTTP {code})."
+                        break  # try next model in chain
+                    last_err = f"Gemini API lỗi HTTP {code}."
+                    break
+                except requests.Timeout:
+                    last_err = f"Timeout kết nối Gemini ({model_id})."
+                    break
+                except Exception as exc:
+                    last_err = f"Lỗi mạng Gemini: {str(exc)[:120]}"
+                    break
+
+        self._last_api_error = last_err or "Cloud Gemini API không phản hồi."
+        return None, ""
 
     def _is_hard_task(self, text: str) -> bool:
         return bool(
@@ -1192,89 +1286,94 @@ class VramRouter:
         self,
         prompt: str,
         context_text: str = "",
-        timeout_sec: float = 10.0,
+        timeout_sec: float = 12.0,
         with_tools: bool = True,
         safety_mode: Optional[str] = None,
         approved: bool = False,
+        failure_hint: str = "",
     ) -> Optional[Dict[str, Any]]:
-        """Optional Tier 3 Cloud Gemini API for hard/multi-step tasks BEFORE Antigravity; skips cleanly on timeout/error."""
+        """Final Tier 3 Cloud Gemini API with multi-key failover, dynamic tool pruning, UI compression & injection guard."""
         if not self.api_fallback_enabled:
             return None
-        api_key = self._read_gemini_api_key()
-        if not api_key:
+        if not self._read_gemini_api_keys():
+            self._last_api_error = "Chưa có GEMINI_API_KEY."
             return None
-        model_id = "gemini-2.5-flash"
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-        headers = {"x-goog-api-key": api_key, "Content-Type": "application/json"}
 
+        hard_task = self._is_hard_task(prompt)
         if not with_tools:
-            full_prompt = prompt if not context_text else f"{prompt}\n\nDữ liệu ngữ cảnh:\n{context_text[:6000]}"
-            try:
-                resp = requests.post(
-                    endpoint,
-                    headers=headers,
-                    json={
-                        "contents": [{"parts": [{"text": full_prompt}]}],
-                        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900},
-                    },
-                    timeout=(3.0, timeout_sec),
-                )
-                if not resp.ok:
-                    return None
-                data = resp.json()
-                cands = data.get("candidates") or []
-                parts = ((cands[0].get("content") or {}).get("parts") or []) if cands else []
-                answer = "\n".join(str(p.get("text") or "") for p in parts if p.get("text")).strip()
-                if not answer:
-                    return None
-                return {
-                    "ok": True,
-                    "tier": 3,
-                    "route": "gemini_api_fallback",
-                    "model_used": model_id,
-                    "reply": answer,
-                }
-            except Exception:
+            full_prompt = prompt if not context_text else f"{prompt}\n\nDữ liệu ngữ cảnh:\n{context_text[:8000]}"
+            data, model_id = self._post_gemini_with_failover(
+                {
+                    "contents": [{"parts": [{"text": full_prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048 if hard_task else 1024},
+                },
+                timeout_sec=timeout_sec,
+                hard_task=hard_task,
+            )
+            if not data:
                 return None
+            cands = data.get("candidates") or []
+            parts = ((cands[0].get("content") or {}).get("parts") or []) if cands else []
+            answer = "\n".join(str(p.get("text") or "") for p in parts if p.get("text") and not p.get("thought")).strip()
+            if not answer:
+                return None
+            return {
+                "ok": True,
+                "tier": 3,
+                "route": "gemini_api_fallback",
+                "model_used": model_id,
+                "reply": answer,
+            }
 
         win_ctx, live_wins = self._build_live_windows_summary()
-        sys_txt = AGENT_SYSTEM_PROMPT + win_ctx + self._get_dynamic_app_hint()
+        mem_ctx = self._build_short_term_memory_summary()
+        sys_txt = AGENT_SYSTEM_PROMPT + win_ctx + mem_ctx + self._get_dynamic_app_hint() + (failure_hint or "")
         if context_text:
-            sys_txt += f"\n\nNgữ cảnh bổ sung:\n{context_text[:4000]}"
+            sys_txt += f"\n\nNgữ cảnh bổ sung:\n{context_text[:5000]}"
 
         contents: List[Dict[str, Any]] = [{"role": "user", "parts": [{"text": prompt}]}]
-        tool_decls = _build_gemini_function_declarations()
         executed_tools: List[Dict[str, Any]] = []
         last_answer = ""
-        total_budget = max(float(timeout_sec) * 2.4, 24.0)
+        used_model = self._last_api_model
+        used_snapshot = False
+        has_error = bool(failure_hint)
+        total_budget = max(float(timeout_sec) * 2.5, 28.0)
         deadline = time.monotonic() + total_budget
 
         try:
-            for _round in range(6):
+            for round_idx in range(6):
                 if self._panic_active:
                     return {"ok": False, "cancelled": True, "reply": "Đã dừng khẩn cấp."}
                 remaining = deadline - time.monotonic()
                 if remaining <= 1.5:
+                    self._last_api_error = "Quá thời gian xử lý Cloud API."
                     return None
-                req_timeout = min(float(timeout_sec), max(2.0, remaining))
+                req_timeout = min(float(timeout_sec), max(2.5, remaining))
 
+                focused_tools = _select_tools_for_prompt(
+                    prompt,
+                    failure_hint=failure_hint,
+                    round_idx=round_idx,
+                    has_error=has_error,
+                    used_snapshot=used_snapshot,
+                )
+                tool_decls = _build_gemini_function_declarations(focused_tools)
                 payload: Dict[str, Any] = {
                     "systemInstruction": {"parts": [{"text": sys_txt}]},
                     "contents": contents,
-                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 900},
+                    "generationConfig": {"temperature": 0.1, "maxOutputTokens": 1400 if hard_task else 900},
                 }
                 if tool_decls:
                     payload["tools"] = [{"functionDeclarations": tool_decls}]
 
-                resp = requests.post(
-                    endpoint,
-                    headers=headers,
-                    json=payload,
-                    timeout=(3.0, req_timeout),
+                data, model_id = self._post_gemini_with_failover(
+                    payload,
+                    timeout_sec=req_timeout,
+                    hard_task=hard_task or used_snapshot,
                 )
-                if not resp.ok:
+                if not data:
                     return None
-                data = resp.json()
+                used_model = model_id or used_model
                 cands = data.get("candidates") or []
                 if not cands:
                     return None
@@ -1283,7 +1382,7 @@ class VramRouter:
                 if parts:
                     contents.append({"role": "model", "parts": parts})
 
-                text_chunks = [str(p.get("text") or "") for p in parts if p.get("text")]
+                text_chunks = [str(p.get("text") or "") for p in parts if p.get("text") and not p.get("thought")]
                 if text_chunks:
                     last_answer = "\n".join(text_chunks).strip()
 
@@ -1299,7 +1398,7 @@ class VramRouter:
                             "ok": overall_ok,
                             "tier": 3,
                             "route": "gemini_api_fallback",
-                            "model_used": model_id,
+                            "model_used": used_model,
                             "tool": last_entry["tool"],
                             "args": last_entry["args"],
                             "steps_executed": len(executed_tools),
@@ -1312,7 +1411,7 @@ class VramRouter:
                         "ok": True,
                         "tier": 3,
                         "route": "gemini_api_fallback",
-                        "model_used": model_id,
+                        "model_used": used_model,
                         "reply": last_answer,
                     }
 
@@ -1325,18 +1424,28 @@ class VramRouter:
                     tname, targs = self._normalize_local_tool_call(raw_name, raw_args, live_wins)
                     if not tname:
                         continue
+                    if tname in ("desktop_snapshot", "browser_snapshot"):
+                        used_snapshot = True
                     route = self._normalize_server_for_tool("fast_desktop", tname)
                     out = self._execute_tool_with_guard(route, tname, targs, safety_mode=safety_mode, approved=approved, user_text=prompt)
                     if out.get("needs_confirmation"):
                         return out
                     out.pop("__images", None)
+                    if not out.get("ok", True):
+                        has_error = True
                     executed_tools.append({"route": route, "tool": tname, "args": targs, "result": out})
                     if tname in ("launch_app", "open_edge_url") and out.get("ok", True):
-                        time.sleep(1.0)
+                        time.sleep(0.85)
+                    if tname in ("desktop_snapshot", "desktop_find", "uia_read", "browser_snapshot"):
+                        compact_res = _compress_ui_output(tname, out, user_text=prompt, max_chars=2200)
+                    else:
+                        compact_res = json.dumps(out, ensure_ascii=False)[:2600]
+                    if tname in _UNTRUSTED_UI_TOOLS:
+                        compact_res = f"<untrusted_ui_data>\n{compact_res}\n</untrusted_ui_data>"
                     fn_response_parts.append({
                         "functionResponse": {
                             "name": raw_name,
-                            "response": {"result": json.dumps(out, ensure_ascii=False)[:3800]},
+                            "response": {"result": compact_res},
                         }
                     })
 
@@ -1352,7 +1461,7 @@ class VramRouter:
                     "ok": overall_ok,
                     "tier": 3,
                     "route": "gemini_api_fallback",
-                    "model_used": model_id,
+                    "model_used": used_model,
                     "tool": last_entry["tool"],
                     "args": last_entry["args"],
                     "steps_executed": len(executed_tools),
@@ -1360,8 +1469,8 @@ class VramRouter:
                     "result": last_entry["result"],
                 }
             return None
-        except Exception:
-            # Timeout or network/quota error -> skip cleanly without blocking
+        except Exception as exc:
+            self._last_api_error = f"Lỗi Cloud API: {str(exc)[:140]}"
             return None
 
     def _solve_hard_text(self, prompt: str, screen_text: str) -> Dict[str, Any]:
@@ -1664,7 +1773,10 @@ class VramRouter:
             "safety_mode": self.safety_mode,
             "thinking_mode": self.thinking_mode,
             "api_fallback_enabled": self.api_fallback_enabled,
-            "api_key_configured": bool(self._read_gemini_api_key()),
+            "api_key_configured": bool(self._read_gemini_api_keys()),
+            "api_key_count": len(self._read_gemini_api_keys()),
+            "api_model": self._last_api_model,
+            "last_api_error": self._last_api_error,
             "mcp_status": self.mcp.get_status(),
         }
 
@@ -2941,6 +3053,26 @@ class VramRouter:
                 "Đừng lặp lại đúng thao tác y hệt vừa lỗi; hãy dùng agent_desktop (desktop_snapshot / desktop_find / desktop_click / desktop_type) "
                 "hoặc đường vòng khác (open_edge_url / send_hotkey / uia_click) để hoàn thành giúp người dùng.\n"
             )
+        # Zero-Ollama Fast-Route: if Ollama is not installed on this PC and Cloud Gemini API is enabled,
+        # go straight to Tier 3 without wasting 2-3s attempting a dead localhost:11434 connection.
+        if self.api_fallback_enabled and self._read_gemini_api_keys() and not _is_ollama_installed():
+            api_direct = self._try_api_fallback(
+                clean,
+                timeout_sec=12.0,
+                with_tools=True,
+                safety_mode=safety_mode,
+                approved=approved,
+                failure_hint=failure_hint,
+            )
+            if api_direct is not None:
+                return api_direct
+            return {
+                "ok": False,
+                "tier": 3,
+                "route": "gemini_api_fallback",
+                "reply": self._last_api_error or "Cloud Gemini API chưa phản hồi; vui lòng kiểm tra API Key hoặc kết nối mạng.",
+            }
+
         try:
             local_res = self._run_local_agent_loop(
                 clean,
@@ -2987,17 +3119,19 @@ class VramRouter:
                     with_tools=True,
                     safety_mode=safety_mode,
                     approved=approved,
+                    failure_hint=failure_hint,
                 )
                 if api_res is not None:
                     return api_res
             if (not local_res.get("ok") and self._is_hard_task(clean)) or multi_incomplete:
-                has_key = bool(self._read_gemini_api_key())
+                has_key = bool(self._read_gemini_api_keys())
                 if not self.api_fallback_enabled:
                     tip = "Tác vụ phức tạp vượt quá AI Local. Hãy bật Cloud Gemini API và nhập API Key trong Cài đặt để xử lý ở tầng cuối."
                 elif not has_key:
                     tip = "Tác vụ phức tạp vượt quá AI Local. Bạn đã bật Cloud API nhưng chưa nhập GEMINI_API_KEY trong Cài đặt."
                 else:
-                    tip = "Tác vụ phức tạp vượt quá AI Local và Cloud Gemini API hiện chưa phản hồi (timeout/hết hạn mức). Vui lòng thử lại."
+                    detail = f" ({self._last_api_error})" if self._last_api_error else ""
+                    tip = f"Tác vụ phức tạp vượt quá AI Local và Cloud Gemini API chưa phản hồi{detail}. Vui lòng thử lại."
                 return {
                     **local_res,
                     "ok": False,
@@ -3014,6 +3148,7 @@ class VramRouter:
                     with_tools=True,
                     safety_mode=safety_mode,
                     approved=approved,
+                    failure_hint=failure_hint,
                 )
                 if api_res is not None:
                     return api_res
@@ -3029,12 +3164,12 @@ class VramRouter:
                         "hoặc bật Cloud Gemini API và nhập API Key trong Cài đặt."
                     ),
                 }
-            has_key = bool(self._read_gemini_api_key())
-            hint = (
-                "Hãy kiểm tra Ollama đang chạy hoặc kiểm tra lại GEMINI_API_KEY / kết nối mạng."
-                if (self.api_fallback_enabled and has_key)
-                else "Hãy bật Ollama hoặc bật Cloud Gemini API + nhập API Key trong Cài đặt."
-            )
+            has_key = bool(self._read_gemini_api_keys())
+            if self.api_fallback_enabled and has_key:
+                detail = f" ({self._last_api_error})" if self._last_api_error else ""
+                hint = f"Cloud Gemini API cũng chưa phản hồi{detail}. Hãy kiểm tra Ollama hoặc API Key."
+            else:
+                hint = "Hãy bật Ollama hoặc bật Cloud Gemini API + nhập API Key trong Cài đặt."
             return {
                 "ok": False,
                 "tier": 3,

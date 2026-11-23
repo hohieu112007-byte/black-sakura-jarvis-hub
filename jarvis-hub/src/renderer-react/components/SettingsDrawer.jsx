@@ -934,14 +934,19 @@ export function SettingsDrawer({
             <div className="space-y-1.5 p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="font-extrabold text-[#0E0E13]">Đường nối API (Ca khó)</div>
+                  <div className="font-extrabold text-[#0E0E13]">Cloud Gemini API (Tầng 3 cuối)</div>
                   <div className="text-[10.5px] font-medium text-zinc-600">
                     {apiFallbackOn
                       ? apiKeyReady
-                        ? "Đang BẬT · Tầng cuối dự phòng (API Key)"
+                        ? `Đang BẬT · ${backendStatus?.api_key_count || 1} key · ${backendStatus?.api_model || "gemini-2.5-flash"}`
                         : "Đã BẬT · Chưa có GEMINI_API_KEY"
                       : "Đang TẮT · Chỉ chạy Local AI"}
                   </div>
+                  {backendStatus?.last_api_error && (
+                    <div className="text-[9.5px] font-bold text-rose-600 mt-0.5 truncate" title={backendStatus.last_api_error}>
+                      {backendStatus.last_api_error}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
@@ -968,7 +973,7 @@ export function SettingsDrawer({
                     type="password"
                     value={cloudKeyInput}
                     onChange={(e) => setCloudKeyInput(e.target.value)}
-                    placeholder={apiKeyReady ? "Nhập key mới nếu muốn đổi..." : "Dán 1 GEMINI_API_KEY..."}
+                    placeholder={apiKeyReady ? "Nhập 1 hoặc nhiều key (cách bởi dấu phẩy)..." : "Dán 1 hoặc nhiều GEMINI_API_KEY (cách dấu ,)..."}
                     className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-zinc-50 border-2 border-[#0E0E13] text-[11px] font-medium text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none"
                   />
                   <button
