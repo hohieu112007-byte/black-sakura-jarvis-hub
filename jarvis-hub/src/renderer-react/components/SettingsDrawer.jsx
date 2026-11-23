@@ -762,7 +762,8 @@ export function SettingsDrawer({
                   ...((hubState.displays || []).length > 1
                     ? (hubState.displays || []).map((d) => ({
                         id: `display:${d.id}`,
-                        label: `Màn ${d.index} (${d.width}×${d.height})`,
+                        label: `Màn ${d.index} · ${d.aspectRatio || `${d.width}×${d.height}`}`,
+                        title: d.label || `Màn ${d.index} (${d.width}×${d.height})`,
                       }))
                     : []),
                 ].map((opt) => {
@@ -771,6 +772,7 @@ export function SettingsDrawer({
                     <button
                       key={opt.id}
                       type="button"
+                      title={opt.title || opt.label}
                       onClick={() => onChangeDisplayMode?.(opt.id)}
                       className={`h-7 px-2 rounded-lg text-[10.5px] font-bold border-2 border-[#0E0E13] transition-colors cursor-pointer truncate ${
                         active ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
@@ -781,6 +783,15 @@ export function SettingsDrawer({
                   );
                 })}
               </div>
+              {(hubState.displays || []).length > 0 && (
+                <div className="text-[9.5px] font-mono text-zinc-600 pt-1 border-t border-zinc-200 space-y-0.5">
+                  {(hubState.displays || []).map((d) => (
+                    <div key={d.id} className="truncate" title={d.label}>
+                      {d.label || `Màn ${d.index} · ${d.width}×${d.height}`}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Unified Sakuga VFX Toggle + Inline Test */}
@@ -870,6 +881,14 @@ export function SettingsDrawer({
                 <span>Ẩn xuống System Tray</span>
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => window.jarvisApi?.reopenSetup?.()}
+              className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-zinc-50 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Mở lại Thiết lập lần đầu (Setup Wizard)</span>
+            </button>
           </>
         )}
 

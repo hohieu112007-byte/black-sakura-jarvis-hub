@@ -185,6 +185,7 @@ export function loadHubState() {
     customDictionary: [],
     sakugaEnabled: true,
     displayMode: "cursor",
+    onboardingCompleted: false,
   };
   try {
     if (!fs.existsSync(STATE_FILE)) return defaults;
@@ -216,6 +217,7 @@ export function loadHubState() {
         : [],
       sakugaEnabled: parsed.sakugaEnabled !== false,
       displayMode: loadedDisplayMode,
+      onboardingCompleted: parsed.onboardingCompleted === true,
     };
   } catch {
     return defaults;

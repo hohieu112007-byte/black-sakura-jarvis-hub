@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld("jarvisApi", {
   getInitialState: () => ipcRenderer.invoke("hub:get-state"),
   getBackendToken: () => ipcRenderer.invoke("hub:get-backend-token"),
   backendRequest: (endpoint, body = null) => ipcRenderer.invoke("hub:backend-request", { endpoint, body }),
+  getSetupDiagnostics: () => ipcRenderer.invoke("hub:get-setup-diagnostics"),
+  openExternalSafe: (url) => ipcRenderer.invoke("hub:open-external", url),
+  completeOnboarding: (payload) => ipcRenderer.invoke("hub:complete-onboarding", payload),
+  reopenSetup: () => ipcRenderer.invoke("hub:reopen-setup"),
   sendPrompt: (text, context = null) => ipcRenderer.invoke("hub:send-prompt", { text, context }),
   sendVoiceWav: (wavBase64, hintTranscript = "", context = null) =>
     ipcRenderer.invoke("hub:send-voice-wav", { wavBase64, hintTranscript, context }),

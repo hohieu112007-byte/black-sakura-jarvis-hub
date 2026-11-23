@@ -14,7 +14,9 @@ Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**L
   - **Tầng 2.5 — Vision Click dự phòng:** Lưới 10×10 miễn phí VRAM hoặc bật **OmniParser V2** (lazy-load vào VRAM chỉ lúc UIA bấm trượt).
   - **Tầng 3 (Tầng cuối) — Cloud Gemini API Key (Tùy chọn, tắt mặc định):** Xử lý các tác vụ nhiều bước / ca khó khi AI Local không đáp ứng hoặc máy chưa cài Ollama — chỉ cần nhập `GEMINI_API_KEY` trong Cài đặt hoặc `.env`.
 - **Chạy tốt kể cả khi chưa cài Ollama:** Tầng 1 điều khiển Windows/trình duyệt chạy ngay lập tức mà không cần Ollama hay GPU rời; khi cần suy luận sâu có thể bật Cloud Gemini API hoặc cài Ollama sau.
-- **Đóng gói `.exe` portable tiện lợi:** Chạy `build_exe.bat` để tạo thư mục portable chứa **`BlackSakuraJarvisHub.exe`** bấm đúp chạy ngay (hoặc tải bản build tự động từ GitHub Actions).
+- **Tự nhận diện màn hình, tỷ lệ khung hình & DPI:** Tự phát hiện độ phân giải gốc, tỷ lệ màn hình (`16:9`, `16:10`, `21:9 UltraWide`, `32:9`, `3:2`, `4:3`, màn dọc `Portrait`) và mức DPI scale trên nhiều màn hình để tự căn chỉnh tỷ lệ zoom/khung HUD không bị cắt chữ.
+- **Cửa sổ Thiết lập ban đầu (First-Run Setup Wizard):** Lần đầu mở app sẽ hiện cửa sổ thiết lập hoàn chỉnh (hỏi xác nhận quyền điều khiển & cảnh báo bảo mật, chọn chế độ Safe/Turbo, hiển thị thông số màn hình/GPU/Backend/Ollama tự quét, hỗ trợ tải Ollama / nhập Cloud Gemini API Key) trước khi thu gọn thành Mini HUD nổi trên màn hình.
+- **Đóng gói 1 file ZIP Portable `.exe` tiện tải:** Tải 1 gói duy nhất từ [GitHub Releases](https://github.com/hohieu112007-byte/black-sakura-jarvis-hub/releases/latest) hoặc tự build bằng `build_exe.bat` để tạo **`BlackSakuraJarvisHub.exe`** + file `.zip` portable.
 
 ---
 
@@ -32,6 +34,15 @@ Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**L
 ---
 
 ## Cài đặt nhanh (Windows 10/11)
+
+### Cách nhanh nhất: Tải 1 gói Portable `.zip` (có sẵn `BlackSakuraJarvisHub.exe`)
+1. Tải file **`Black-Sakura-Jarvis-Hub-v1.0.0-Windows-Portable.zip`** tại **[GitHub Releases](https://github.com/hohieu112007-byte/black-sakura-jarvis-hub/releases/latest)** và giải nén.
+2. *(Chỉ làm 1 lần)* Cài thư viện Python: `pip install -r requirements.txt` (cần Python 3.10+).
+3. Bấm đúp **`BlackSakuraJarvisHub.exe`** — cửa sổ **Setup Wizard** sẽ tự mở để hướng dẫn quyền, kiểm tra màn hình/GPU/Ollama và cấu hình trước khi thu gọn thành Mini HUD.
+
+---
+
+### Cách 2: Chạy từ mã nguồn (Developer)
 
 Xem hướng dẫn chi tiết từng bước (bao gồm máy chưa có Ollama, máy không có GPU rời, và đổi model) tại **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)**.
 

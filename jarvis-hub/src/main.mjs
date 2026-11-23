@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, clipboard } from "electron";
+import { app, BrowserWindow, Tray, Menu, ipcMain, screen, nativeImage, dialog, clipboard, shell } from "electron";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -279,6 +279,7 @@ const HIDE_AFTER_IDLE_MS = 36000;
 const HIDE_FADE_MS = 350;
 
 let mainWindow = null;
+let setupWindow = null;
 let tray = null;
 let hotkeyProc = null;
 let localBackendProc = null;
@@ -403,21 +404,40 @@ function emitHud(payload) {
   }
 }
 
+function detectAspectRatioLabel(w, h) {
+  if (!w || !h) return "16:9";
+  if (h > w) return "Dọc (Portrait)";
+  const r = w / h;
+  if (r >= 3.0) return "32:9 SuperWide";
+  if (r >= 2.2) return "21:9 UltraWide";
+  if (r >= 1.72) return "16:9";
+  if (r >= 1.54) return "16:10";
+  if (r >= 1.44) return "3:2";
+  return "4:3";
+}
+
 function getAvailableDisplaysInfo() {
   const primaryId = screen.getPrimaryDisplay().id;
   return screen.getAllDisplays().map((d, idx) => {
     const isPrimary = d.id === primaryId;
+    const sf = Number(d.scaleFactor || 1);
     const w = Math.round(d.size?.width || d.bounds?.width || 0);
     const h = Math.round(d.size?.height || d.bounds?.height || 0);
-    const scale = Math.round((d.scaleFactor || 1) * 100);
+    const physW = Math.round(w * sf);
+    const physH = Math.round(h * sf);
+    const scale = Math.round(sf * 100);
+    const aspect = detectAspectRatioLabel(physW, physH);
     return {
       id: d.id,
       index: idx + 1,
       isPrimary,
       width: w,
       height: h,
+      physicalWidth: physW,
+      physicalHeight: physH,
+      aspectRatio: aspect,
       scalePercent: scale,
-      label: `Màn ${idx + 1}${isPrimary ? " (Chính)" : ""} · ${w}×${h} (${scale}%)`,
+      label: `Màn ${idx + 1}${isPrimary ? " (Chính)" : ""} · ${physW}×${physH} (${aspect}, ${scale}%)`,
     };
   });
 }
@@ -439,15 +459,30 @@ function resolveTargetDisplay() {
   return screen.getPrimaryDisplay();
 }
 
+function computeAdaptiveZoomForDisplay(display) {
+  const wa = display?.workArea || screen.getPrimaryDisplay().workArea;
+  const sf = Number(display?.scaleFactor || 1);
+  // Small laptops (e.g. 1366x768) or high DPI (150%+) where CSS workArea is tight -> gently shrink to prevent clipping
+  if (wa.height < 640 || wa.width < 960) return 0.84;
+  if (wa.height < 740 || wa.width < 1180) return 0.92;
+  // Native 4K / huge ultrawide at 100% scale -> gently enlarge for readability
+  if (wa.width >= 2400 && wa.height >= 1300 && sf <= 1.1) return 1.12;
+  return 1.0;
+}
+
 function computeCenteredBoundsForDisplay(display) {
   const wa = display?.workArea || screen.getPrimaryDisplay().workArea;
-  const winW = Math.min(HUB_WIN_WIDTH, Math.max(440, wa.width - 8));
-  const winH = Math.min(HUB_WIN_HEIGHT, Math.max(420, wa.height - 4));
+  const zoom = computeAdaptiveZoomForDisplay(display);
+  const desiredW = Math.round(HUB_WIN_WIDTH * zoom);
+  const desiredH = Math.round(HUB_WIN_HEIGHT * zoom);
+  const winW = Math.min(desiredW, Math.max(400, wa.width - 12));
+  const winH = Math.min(desiredH, Math.max(380, wa.height - 8));
   return {
     x: Math.round(wa.x + (wa.width - winW) / 2),
     y: Math.round(wa.y),
     width: winW,
     height: winH,
+    zoomFactor: zoom,
   };
 }
 
@@ -473,13 +508,20 @@ function positionWindowTopCenter() {
   activeDisplayId = target.id;
   const targetBounds = computeCenteredBoundsForDisplay(target);
   applyBoundsSafe(targetBounds);
+  try {
+    mainWindow.webContents.setZoomFactor(targetBounds.zoomFactor || 1.0);
+  } catch {}
 
   if (prevDisplayId !== null && prevDisplayId !== target.id) {
     clearTimeout(crossDpiVerifyTimer);
     crossDpiVerifyTimer = setTimeout(() => {
       if (!mainWindow || mainWindow.isDestroyed()) return;
       const verified = resolveTargetDisplay();
-      applyBoundsSafe(computeCenteredBoundsForDisplay(verified));
+      const verifiedBounds = computeCenteredBoundsForDisplay(verified);
+      applyBoundsSafe(verifiedBounds);
+      try {
+        mainWindow.webContents.setZoomFactor(verifiedBounds.zoomFactor || 1.0);
+      } catch {}
     }, 80);
   }
 }
@@ -942,6 +984,10 @@ function updateTrayMenu() {
       label: "Màn hình hiển thị",
       submenu: displaySubmenu,
     },
+    {
+      label: "⚙️ Thiết lập ban đầu (Setup Wizard)",
+      click: () => openSetupWizardWindow(),
+    },
     { type: "separator" },
     {
       label: currentSafetyMode === "safe" ? "🛡️ Chế độ: Safe (Đang bật hỏi Allow)" : "⚡ Chế độ: Turbo (Tự động)",
@@ -1054,6 +1100,67 @@ function createWindow() {
   positionWindowTopCenter();
 }
 
+function openSetupWizardWindow() {
+  if (setupWindow && !setupWindow.isDestroyed()) {
+    setupWindow.show();
+    setupWindow.focus();
+    return;
+  }
+  const primary = screen.getPrimaryDisplay();
+  const wa = primary.workArea;
+  const w = Math.min(720, Math.max(520, wa.width - 48));
+  const h = Math.min(690, Math.max(520, wa.height - 48));
+  const icoPath = path.join(__dirname, "..", "jarvis.ico");
+
+  setupWindow = new BrowserWindow({
+    title: "Black Sakura Jarvis-Hub — Thiết lập lần đầu",
+    icon: fs.existsSync(icoPath) ? icoPath : undefined,
+    width: w,
+    height: h,
+    x: Math.round(wa.x + (wa.width - w) / 2),
+    y: Math.round(wa.y + (wa.height - h) / 2),
+    minWidth: 500,
+    minHeight: 480,
+    frame: true,
+    autoHideMenuBar: true,
+    transparent: false,
+    resizable: true,
+    backgroundColor: "#f8fafc",
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  });
+
+  setupWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  setupWindow.webContents.on("will-navigate", (evt, navUrl) => {
+    if (!String(navUrl || "").startsWith("file://")) {
+      evt.preventDefault();
+    }
+  });
+
+  const distHtml = path.join(__dirname, "renderer", "dist", "index.html");
+  const targetHtml = fs.existsSync(distHtml) ? distHtml : path.join(__dirname, "renderer", "index.html");
+  setupWindow.loadFile(targetHtml, { query: { mode: "setup" } });
+  setupWindow.once("ready-to-show", () => {
+    if (setupWindow && !setupWindow.isDestroyed()) {
+      setupWindow.show();
+      setupWindow.focus();
+    }
+  });
+  setupWindow.on("closed", () => {
+    setupWindow = null;
+    // If user closed setup window after completing or dismissing, ensure HUD is accessible
+    if (!isQuittingHub && hubState.onboardingCompleted && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      showHubWindow({ focus: false, reason: "setup_closed" });
+    }
+  });
+}
+
 function registerIpc() {
   ipcMain.handle("hub:get-state", () => getPublicState());
   ipcMain.handle("hub:get-backend-token", () => readBackendSessionToken());
@@ -1061,7 +1168,88 @@ function registerIpc() {
     const ep = String(endpoint || "").trim();
     if (!ep.startsWith("/")) return { ok: false, error: "Invalid endpoint" };
     const res = await callLocalBackend(ep, body, 15000, ep === "/status");
-    return res || { ok: false, error: "Backend (:8765) chưa phản hồi" };
+    return res || { ok: false, error: `Backend (:${activeBackendPort}) chưa phản hồi` };
+  });
+
+  ipcMain.handle("hub:get-setup-diagnostics", async () => {
+    const pyExe = resolvePythonExecutable();
+    const ollLaunch = resolveOllamaLaunch();
+    const backendStatus = await callLocalBackend("/status", null, 3500, true).catch(() => null);
+    return {
+      ok: true,
+      displays: getAvailableDisplaysInfo(),
+      displayMode: hubState.displayMode || "cursor",
+      safetyMode: currentSafetyMode,
+      activeBackendPort,
+      pythonExe: pyExe,
+      pythonFound: pyExe === "python" ? true : fs.existsSync(pyExe),
+      ollamaInstalled: Boolean(ollLaunch || backendStatus?.ollama_installed),
+      backendStatus: backendStatus && backendStatus.ok ? backendStatus : null,
+      onboardingCompleted: hubState.onboardingCompleted === true,
+    };
+  });
+
+  ipcMain.handle("hub:open-external", async (_evt, rawUrl) => {
+    const u = String(rawUrl || "").trim();
+    const allowedPrefixes = [
+      "https://ollama.com",
+      "https://aistudio.google.com",
+      "https://github.com/hohieu112007-byte/black-sakura-jarvis-hub",
+      "https://www.python.org",
+    ];
+    if (!allowedPrefixes.some((p) => u.startsWith(p))) {
+      return { ok: false, error: "URL không nằm trong danh sách cho phép." };
+    }
+    await shell.openExternal(u);
+    return { ok: true };
+  });
+
+  ipcMain.handle("hub:complete-onboarding", async (_evt, payload = {}) => {
+    const nextDisplay = String(payload.displayMode || hubState.displayMode || "cursor");
+    const validDisplay =
+      nextDisplay === "cursor" || nextDisplay === "primary" || /^display:\d+$/.test(nextDisplay)
+        ? nextDisplay
+        : "cursor";
+    hubState.displayMode = validDisplay;
+    hubState.onboardingCompleted = true;
+
+    const chosenSafety = payload.safetyMode === "turbo" ? "turbo" : "safe";
+    try {
+      currentSafetyMode = await setSafetyMode(chosenSafety);
+      mcpHub?.setSafetyMode(currentSafetyMode);
+    } catch {
+      currentSafetyMode = chosenSafety;
+    }
+
+    if (payload.selectedModel && typeof payload.selectedModel === "string") {
+      hubState.localModelPreset = payload.selectedModel.trim();
+      await callLocalBackend("/set-model", { model: hubState.localModelPreset }, 4000, false).catch(() => {});
+    }
+
+    const cleanKey = String(payload.apiKey || "").trim();
+    if (cleanKey) {
+      await callLocalBackend("/set-api-fallback", { enabled: true, api_key: cleanKey }, 4000, false).catch(() => {});
+    } else if (typeof payload.enableApiFallback === "boolean") {
+      await callLocalBackend("/set-api-fallback", { enabled: payload.enableApiFallback }, 4000, false).catch(() => {});
+    }
+
+    await callLocalBackend("/set-safety", { safety_mode: currentSafetyMode }, 2500, false).catch(() => {});
+    saveHubState(hubState);
+    updateTrayMenu();
+    positionWindowTopCenter();
+    emitHud({ type: "state_sync", ...getPublicState() });
+
+    if (setupWindow && !setupWindow.isDestroyed()) {
+      setupWindow.close();
+    }
+    showHubWindow({ focus: true, reason: "onboarding_done" });
+    emitHud({ type: "ready", ...getPublicState() });
+    return { ok: true };
+  });
+
+  ipcMain.handle("hub:reopen-setup", () => {
+    openSetupWizardWindow();
+    return { ok: true };
   });
 
   ipcMain.handle("hub:send-prompt", async (_evt, rawPayload) => {
@@ -1615,9 +1803,9 @@ function scheduleDisplayChangeSync() {
   }, 140);
 }
 
-app.setName("Jarvis Desktop Hub");
+app.setName("Black Sakura Jarvis-Hub");
 if (process.platform === "win32") {
-  app.setAppUserModelId("com.jarvis.desktophub");
+  app.setAppUserModelId("com.blacksakura.jarvishub");
 }
 // Keep Electron/Chromium V8 heap & cache lean for 24/7 tray residency
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=192");
@@ -1664,9 +1852,14 @@ app.whenReady().then(async () => {
   screen.on("display-metrics-changed", scheduleDisplayChangeSync);
 
   tray = new Tray(createTrayIcon());
-  tray.setToolTip(`Jarvis Desktop Hub (${hubState.hotkey.toUpperCase()})`);
+  tray.setToolTip(`Black Sakura Jarvis-Hub (${hubState.hotkey.toUpperCase()})`);
   updateTrayMenu();
   tray.on("click", () => {
+    if (!hubState.onboardingCompleted && setupWindow && !setupWindow.isDestroyed()) {
+      setupWindow.show();
+      setupWindow.focus();
+      return;
+    }
     if (!mainWindow) return;
     if (mainWindow.isVisible()) hideHubWindow();
     else showHubWindow({ focus: true, reason: "tray_click" });
@@ -1675,11 +1868,15 @@ app.whenReady().then(async () => {
   startHotkeyHelper();
   void ensureLocalBackendRunning(agent?.installedApps || []).catch(() => {});
 
-  // Brief non-intrusive ready toast
-  mainWindow.once("ready-to-show", () => {
-    showHubWindow({ focus: false, reason: "boot" });
-    emitHud({ type: "ready", ...getPublicState() });
-  });
+  // First-run: open full Setup Wizard window (permissions, security warning, display, Ollama/API) before mini HUD
+  if (!hubState.onboardingCompleted) {
+    openSetupWizardWindow();
+  } else {
+    mainWindow.once("ready-to-show", () => {
+      showHubWindow({ focus: false, reason: "boot" });
+      emitHud({ type: "ready", ...getPublicState() });
+    });
+  }
 });
 
 app.on("before-quit", () => {

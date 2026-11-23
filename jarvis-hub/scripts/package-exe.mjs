@@ -10,6 +10,8 @@ const HUB_DIR = path.resolve(__dirname, "..");
 const ROOT_DIR = path.resolve(HUB_DIR, "..");
 const ELECTRON_DIST = path.join(HUB_DIR, "node_modules", "electron", "dist");
 const OUT_ROOT = path.join(ROOT_DIR, "dist-exe", "Black-Sakura-Jarvis-Hub");
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(HUB_DIR, "package.json"), "utf8")).version || "1.0.0";
+const ZIP_PATH = path.join(ROOT_DIR, "dist-exe", `Black-Sakura-Jarvis-Hub-v${PKG_VERSION}-Windows-Portable.zip`);
 const APP_DIR = path.join(OUT_ROOT, "resources", "app");
 const ICON_PATH = path.join(HUB_DIR, "jarvis.ico");
 const TARGET_EXE = path.join(OUT_ROOT, "BlackSakuraJarvisHub.exe");
@@ -142,4 +144,80 @@ for (const rootFile of ["requirements.txt", ".env.example", "start_backend.bat",
   }
 }
 
+// 7. Write quickstart guide inside the portable pack
+const quickstartTxt = [
+  "================================================================",
+  `  BLACK SAKURA JARVIS-HUB v${PKG_VERSION} — WINDOWS PORTABLE PACK`,
+  "================================================================",
+  "",
+  "BUOC 1 (Chi can lam 1 lan duy nhat):",
+  "  - Dam bao may da cai Python 3.10+ (https://www.python.org/downloads/)",
+  "  - Mo Terminal / PowerShell tai thu muc nay va chay:",
+  "      pip install -r requirements.txt",
+  "",
+  "BUOC 2 (Chay ung dung):",
+  "  - Bam dup vao file: BlackSakuraJarvisHub.exe",
+  "  - Lan dau mo, cua so Thiet lap ban dau (Setup Wizard) se hien len",
+  "    de hoi quyen, hien canh bao bao mat, tu nhan dien man hinh / GPU,",
+  "    goi y cai Ollama (hoac nhap Cloud Gemini API Key) roi moi thu nho",
+  "    thanh Mini HUD tren man hinh.",
+  "",
+  "LUU Y:",
+  "  - Chua cai Ollama? Khong sao! Tang 1 (dieu khien app/tab/am luong/",
+  "    do sang/chuyen man hinh) van chay tuc thi (<50ms, 0 MB VRAM).",
+  "  - Muon mo lai Setup Wizard sau nay: vao Cai dat -> Chung -> Mo lai",
+  "    Thiet lap lan dau, hoac chuot phai icon duoi khay he thong.",
+  "  - Tai ban moi & xem tai lieu day du tai:",
+  "    https://github.com/hohieu112007-byte/black-sakura-jarvis-hub",
+  "",
+].join("\r\n");
+fs.writeFileSync(path.join(OUT_ROOT, "HUONG-DAN-NHANH.txt"), quickstartTxt, "utf8");
+
+// 8. Secret hygiene audit — abort if any sensitive/local-only file leaked into the portable folder
+const FORBIDDEN_BASENAMES = new Set([
+  ".env",
+  ".session_token",
+  "config.json",
+  "state.json",
+  "task_inbox.json",
+  "backend_error.log",
+]);
+const leakedFiles = [];
+function auditDir(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      auditDir(full);
+    } else if (
+      FORBIDDEN_BASENAMES.has(entry.name) ||
+      entry.name.endsWith(".log") ||
+      (entry.name.startsWith(".env.") && entry.name !== ".env.example")
+    ) {
+      leakedFiles.push(path.relative(OUT_ROOT, full));
+    }
+  }
+}
+auditDir(OUT_ROOT);
+if (leakedFiles.length > 0) {
+  throw new Error(`SECURITY ABORT: Forbidden files detected in portable pack: ${leakedFiles.join(", ")}`);
+}
+
+// 9. Compress into a single downloadable Windows Portable ZIP pack
+if (fs.existsSync(ZIP_PATH)) {
+  fs.rmSync(ZIP_PATH, { force: true });
+}
+console.log("Creating portable ZIP pack:", ZIP_PATH);
+execFileSync(
+  "powershell.exe",
+  [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    `Compress-Archive -Path '${OUT_ROOT}' -DestinationPath '${ZIP_PATH}' -CompressionLevel Optimal -Force`,
+  ],
+  { stdio: "inherit" }
+);
+
+const zipSizeMb = (fs.statSync(ZIP_PATH).size / (1024 * 1024)).toFixed(1);
 console.log("PORTABLE_EXE_PACKAGE_READY:", TARGET_EXE);
+console.log(`PORTABLE_ZIP_PACK_READY: ${ZIP_PATH} (${zipSizeMb} MB)`);
