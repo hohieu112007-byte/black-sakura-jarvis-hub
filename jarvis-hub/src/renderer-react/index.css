@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: transparent !important;
+    overflow: hidden;
+    user-select: none;
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+}
+
+.jarvis-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.jarvis-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.jarvis-scroll::-webkit-scrollbar-thumb {
+  background: rgba(14, 14, 19, 0.25);
+  border-radius: 9999px;
+}
+
+.jarvis-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(14, 14, 19, 0.55);
+}
+
+/* Sakuga VFX Impact Frame (40ms-50ms high-contrast B&W ink inversion) */
+.sakuga-impact-invert {
+  background: #0e0e13 !important;
+  color: #ffffff !important;
+  filter: invert(1) contrast(250%) grayscale(100%) !important;
+  transform: scale(1.04) rotate(-1deg) !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+/* Button-level 50ms monochrome Impact Flash */
+.sakuga-btn-invert {
+  filter: invert(1) contrast(300%) !important;
+}
+
+/* Anime Squash & Bounce (steps(3) stepped frame cadence) */
+@keyframes sakuga-squash-bounce {
+  0% {
+    transform: scale(0.86, 1.14);
+  }
+  55% {
+    transform: scale(1.06, 0.95);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.sakuga-btn-squash {
+  animation: sakuga-squash-bounce 165ms steps(3, end) both;
+}
+
+/* Main Hub 90ms manga shake (2.5px tremor) */
+@keyframes sakuga-manga-shake {
+  0% {
+    transform: translate(-2.5px, 1.5px);
+  }
+  33% {
+    transform: translate(2.5px, -2px);
+  }
+  66% {
+    transform: translate(-2px, -1.5px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+
+.sakuga-hub-shake {
+  animation: sakuga-manga-shake 90ms steps(3, end) both;
+}
+
+/* High-Contrast Manga / Comic Action Panel + Retro Monochrome CRT Scanlines */
+.sakuga-manga-panel {
+  background-color: #ffffff;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(14, 14, 19, 0.042) 0px 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(ellipse 76% 68% at 50% 50%, #ffffff 62%, rgba(255, 255, 255, 0.86) 80%, rgba(255, 255, 255, 0.25) 100%),
+    radial-gradient(rgba(14, 14, 19, 0.1) 1px, transparent 1px),
+    repeating-conic-gradient(
+      from 4deg at 50% 50%,
+      rgba(14, 14, 19, 0.22) 0deg 1.1deg,
+      transparent 1.1deg 7.5deg,
+      rgba(14, 14, 19, 0.09) 7.5deg 8.4deg,
+      transparent 8.4deg 14deg
+    );
+  background-size: 100% 100%, 100% 100%, 7px 7px, 100% 100%;
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -2px 6px rgba(14, 14, 19, 0.09),
+    inset 0 0 14px rgba(14, 14, 19, 0.06);
+}
+
+/* Lighter retro CRT screentone pill for Idle capsule */
+.sakuga-idle-pill {
+  background-color: #ffffff;
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(14, 14, 19, 0.048) 0px 1px,
+      transparent 1px 3px
+    ),
+    radial-gradient(rgba(14, 14, 19, 0.08) 1px, transparent 1px);
+  background-size: 100% 100%, 6px 6px;
+}
+
+.sakuga-panel-shadow {
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.92),
+    inset 0 0 14px rgba(14, 14, 19, 0.06),
+    5px 5px 0px #000000,
+    0 18px 36px rgba(0, 0, 0, 0.28);
+}
+
+.sakuga-pill-shadow {
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.92),
+    inset 0 -2px 5px rgba(14, 14, 19, 0.08),
+    inset 0 0 10px rgba(14, 14, 19, 0.06),
+    4px 4px 0px #000000,
+    0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+@keyframes sakuga-idle-soft-glow {
+  0%, 100% {
+    box-shadow:
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.92),
+      4px 4px 0px #000000,
+      0 0 10px rgba(0, 180, 216, 0.24);
+  }
+  50% {
+    box-shadow:
+      inset 0 1.5px 0 rgba(255, 255, 255, 0.92),
+      4px 4px 0px #000000,
+      0 0 16px rgba(0, 180, 216, 0.38);
+  }
+}
+
+.sakuga-idle-glow {
+  animation: sakuga-idle-soft-glow 2.8s ease-in-out infinite;
+}
+
+/* Subtle Retro CRT Glass Sheen + Monochrome Scan Sweep */
+@keyframes crt-scan-sweep {
+  0% {
+    transform: translateY(-110%);
+  }
+  100% {
+    transform: translateY(220%);
+  }
+}
+
+.crt-glass-sheen {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.12) 26%,
+    transparent 45%,
+    rgba(14, 14, 19, 0.045) 100%
+  );
+}
+
+.crt-scan-beam {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(14, 14, 19, 0.055) 45%,
+    rgba(14, 14, 19, 0.09) 50%,
+    rgba(14, 14, 19, 0.04) 55%,
+    transparent 100%
+  );
+  animation: crt-scan-sweep 4.2s linear infinite;
+}
+
+@keyframes crt-breathe {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(1px);
+  }
+}
+
+.crt-sleep-breathe {
+  animation: crt-breathe 2.6s steps(2, end) infinite;
+}
+
+.sakuga-chip-shadow {
+  box-shadow: 3px 3px 0px #000000;
+}
+
+.sakuga-btn {
+  border: 2px solid #0e0e13;
+  box-shadow: 3px 3px 0px #000000;
+  transition: transform 140ms steps(3, end);
+}
+
+.sakuga-btn-sm {
+  border: 2px solid #0e0e13;
+  box-shadow: 2px 2px 0px #000000;
+  transition: transform 120ms steps(3, end), background-color 120ms ease;
+}
+
+.sakuga-btn-sm:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px #000000;
+}
+
+.sakuga-screentone {
+  background-image: radial-gradient(rgba(14, 14, 19, 0.16) 1px, transparent 1px);
+  background-size: 6px 6px;
+}
+
+/* Smooth crisp Hub entrance pop-in when shown/woken from tray */
+@keyframes jarvis-hub-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.76);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(2px) scale(1.045);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sakuga-hub-appear {
+  animation: jarvis-hub-appear 290ms cubic-bezier(0.22, 1.35, 0.36, 1) both;
+}

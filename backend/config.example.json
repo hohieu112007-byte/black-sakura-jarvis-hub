@@ -1,0 +1,11 @@
+{
+  "current_model": "qwen3.5:4b",
+  "model_alias": "4b",
+  "keep_alive_setting": "2m",
+  "api_fallback_enabled": false,
+  "thinking_mode": "auto",
+  "num_ctx": 8192,
+  "gaming_guard_enabled": true,
+  "omniparser_enabled": false,
+  "browser_use_enabled": false
+}

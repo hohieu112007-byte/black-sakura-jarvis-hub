@@ -1,0 +1,30 @@
+# Core Local Backend
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.7.0
+python-multipart>=0.0.9
+requests>=2.31.0
+psutil>=5.9.0
+numpy>=1.26.0
+Pillow>=10.3.0
+mcp>=1.0.0
+
+# Speech-to-Text (Faster-Whisper) & Local TTS
+faster-whisper>=1.0.3
+edge-tts>=6.1.12
+
+# Document & Clipboard Context Engine
+pyperclip>=1.8.2
+pypdf>=4.2.0
+python-docx>=1.1.2
+openpyxl>=3.1.2
+pywinauto>=0.6.8
+
+# Optional: OmniParser V2 Set-of-Mark icon detection (Tier 2.5 Vision fallback)
+# torch>=2.2.0
+# ultralytics>=8.3.0
+# huggingface-hub>=0.24.0
+
+# Optional: Browser-Use authenticated browser workflows
+# browser-use>=0.1.40
+# langchain-ollama>=0.2.0

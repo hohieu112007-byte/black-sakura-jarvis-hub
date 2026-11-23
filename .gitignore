@@ -1,0 +1,35 @@
+# Secrets & local session tokens (NEVER commit)
+.env
+.env.*
+!.env.example
+jarvis-hub/.env
+backend/.session_token
+
+# Local personal settings, runtime state, history & logs
+backend/config.json
+backend/backend_error.log
+jarvis-hub/state.json
+jarvis-hub/*.log
+bridge_queue/task_inbox.json
+sandbox/
+*.lnk
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Node / Electron / Packaged EXE artifacts
+node_modules/
+jarvis-hub/node_modules/
+jarvis-hub/runtime/
+jarvis-hub/src/renderer/dist/
+dist-exe/
+*.zip
+
+# OS / Editor junk
+.DS_Store
+Thumbs.db
+*.tmp

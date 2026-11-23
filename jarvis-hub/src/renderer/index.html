@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jarvis Desktop Hub</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="hub-shell" class="hub-shell state-idle">
+      <!-- Top Ambient Specular Highlight & Zero-Wait Border Beam -->
+      <div class="ambient-glow" aria-hidden="true"></div>
+      <div class="border-beam" aria-hidden="true"></div>
+
+      <!-- Dynamic Floating Pill -->
+      <div class="pill-bar">
+        <button id="mic-btn" class="eyes-wrap" title="Giữ để nói hoặc nhấn phím tắt">
+          <span class="eyes-visor" aria-hidden="true">
+            <span class="eyes-pair">
+              <span class="jarvis-eye eye-left"></span>
+              <span class="jarvis-eye eye-right"></span>
+            </span>
+          </span>
+        </button>
+
+        <div id="wave-bars" class="wave-bars hidden" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+
+        <input
+          id="prompt-input"
+          class="prompt-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Gõ lệnh hoặc giữ Ctrl+Alt+Space để nói..."
+        />
+
+        <span id="live-act-pill" class="live-act-pill hidden" aria-live="polite"></span>
+
+        <div class="pill-actions">
+          <button id="stop-btn" class="stop-chip hidden" title="Dừng xử lý / tắt giọng ngay (Esc)">
+            <svg class="chip-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <rect x="3.5" y="3.5" width="9" height="9" rx="2" />
+            </svg>
+            <span>Dừng</span>
+          </button>
+
+          <button id="wake-toggle-btn" class="wake-chip active" title="Bật/tắt gọi rảnh tay bằng 'Hey Jarvis'">
+            <span class="wake-dot" aria-hidden="true"></span>
+            <span class="chip-label">Wake</span>
+          </button>
+
+          <button id="voice-toggle-btn" class="icon-chip" title="Mặc định: Text + Bíp (Chỉ đọc khi yêu cầu)" data-voice="off">
+            <svg class="chip-icon icon-voice-on hidden" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="3 6 6.5 6 10 3 10 13 6.5 10 3 10" fill="currentColor" stroke="none" />
+              <path d="M12.2 5.5a3.5 3.5 0 0 1 0 5" />
+              <path d="M13.8 3.8a6 6 0 0 1 0 8.4" />
+            </svg>
+            <svg class="chip-icon icon-voice-off" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="3 6 6.5 6 10 3 10 13 6.5 10 3 10" fill="currentColor" stroke="none" opacity="0.7" />
+              <line x1="12" y1="6" x2="15" y2="10" />
+              <line x1="15" y1="6" x2="12" y2="10" />
+            </svg>
+          </button>
+
+          <button id="safety-btn" class="safety-chip safe" title="Chuyển chế độ Safe / Turbo">
+            <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 2L3 4.2v3.6c0 3.3 2.1 5.6 5 6.4 2.9-.8 5-3.1 5-6.4V4.2L8 2z" />
+            </svg>
+            <span>Safe</span>
+          </button>
+
+          <button id="expand-btn" class="icon-chip expand-chip" title="Mở rộng / Thu gọn Hub">
+            <svg class="chip-icon chevron-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="4.5 6.2 8 9.8 11.5 6.2" />
+            </svg>
+          </button>
+
+          <button id="hide-btn" class="icon-chip close-chip" title="Ẩn xuống khay (Esc)">
+            <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <line x1="4.5" y1="4.5" x2="11.5" y2="11.5" />
+              <line x1="11.5" y1="4.5" x2="4.5" y2="11.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Animated Shimmer Progress Line -->
+      <div class="thinking-bar" aria-hidden="true"></div>
+
+      <!-- Status / Toast Line inside Pill Footer -->
+      <div id="status-strip" class="status-strip hidden">
+        <span id="status-badge" class="status-badge">OK</span>
+        <span id="status-text" class="status-text"></span>
+      </div>
+
+      <!-- Inline Safe Confirmation Banner -->
+      <div id="confirm-bar" class="confirm-bar hidden">
+        <div class="confirm-info">
+          <span class="confirm-title">
+            <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M8 2.2L1.8 13h12.4L8 2.2z" />
+              <line x1="8" y1="6.5" x2="8" y2="9.5" />
+              <circle cx="8" cy="11.4" r="0.6" fill="currentColor" />
+            </svg>
+            Xác nhận thao tác MCP
+          </span>
+          <code id="confirm-summary" class="confirm-code"></code>
+        </div>
+        <div class="confirm-buttons">
+          <button id="confirm-allow" class="btn-allow">✓ Cho phép (Enter)</button>
+          <button id="confirm-deny" class="btn-deny">✕ Hủy (Esc)</button>
+        </div>
+      </div>
+
+      <!-- Inline Local API Key Setup Banner (shown when missing or adding backup keys) -->
+      <div id="apikey-bar" class="apikey-bar hidden">
+        <input
+          id="apikey-input"
+          class="apikey-input"
+          type="password"
+          autocomplete="off"
+          placeholder="Dán 1 hoặc nhiều GEMINI_API_KEY (ngăn cách dấu phẩy để xoay vòng dự phòng)..."
+        />
+        <button id="apikey-save-btn" class="btn-allow">Lưu Key</button>
+      </div>
+
+      <!-- Expanded Command Hub Card -->
+      <div id="expanded-panel" class="expanded-panel hidden">
+        <div class="answer-card">
+          <div class="answer-header">
+            <span id="answer-meta" class="answer-meta">✨ Jarvis Hub • Sẵn sàng</span>
+            <div class="answer-tools">
+              <button id="speak-btn" class="mini-btn" title="Đọc thành tiếng bằng Gemini 3.8 Flash TTS">
+                <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polygon points="2.5 6 6 6 9.5 3 9.5 13 6 10 2.5 10" fill="currentColor" stroke="none" />
+                  <path d="M11.8 5.2a3.8 3.8 0 0 1 0 5.6" />
+                </svg>
+                <span>Đọc lên</span>
+              </button>
+              <button id="export-btn" class="mini-btn" title="Xuất ra file Word (.docx) trong C:\AI-Sandbox\exports">
+                <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" />
+                  <polyline points="9 2 9 6 13 6" />
+                </svg>
+                <span>Xuất Word</span>
+              </button>
+              <button id="copy-btn" class="mini-btn" title="Sao chép nội dung">
+                <svg class="chip-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5" />
+                  <path d="M3.5 10.5H3A1.5 1.5 0 0 1 1.5 9V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5" />
+                </svg>
+                <span id="copy-label">Copy</span>
+              </button>
+            </div>
+          </div>
+          <div id="answer-body" class="answer-body">
+            <p class="muted">Nói <strong>"Hey Jarvis"</strong> bất kỳ lúc nào hoặc giữ <strong id="hotkey-hint">Ctrl + Alt + Space</strong> để ra lệnh trực tiếp (bấm nháy để gõ nhanh).</p>
+          </div>
+        </div>
+
+        <div id="recent-row" class="recent-row hidden">
+          <span class="section-label">Lệnh gần đây</span>
+          <div id="recent-chips" class="recent-chips"></div>
+        </div>
+
+        <div id="activity-row" class="activity-row hidden">
+          <span class="section-label">Tiến trình MCP</span>
+          <div id="activity-list" class="activity-list"></div>
+        </div>
+
+        <div class="hub-footer">
+          <div class="health-dots">
+            <span id="dot-fd" class="dot-item"><i class="dot"></i>fast-desktop</span>
+            <span id="dot-ad" class="dot-item"><i class="dot"></i>agent-desktop</span>
+            <span id="dot-pw" class="dot-item"><i class="dot"></i>playwright</span>
+            <span id="dot-key" class="dot-item"><i class="dot"></i><span id="dot-key-label">Gemini 3.8</span></span>
+            <button id="manage-key-btn" class="mini-btn" title="Thêm API Key dự phòng (tự xoay vòng khi hết token)">+ Key dự phòng</button>
+          </div>
+          <label class="hotkey-picker">
+            <span>Phím tắt:</span>
+            <select id="hotkey-select">
+              <option value="ctrl+alt+space">Ctrl + Alt + Space</option>
+              <option value="f9">F9</option>
+              <option value="alt+space">Alt + Space</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

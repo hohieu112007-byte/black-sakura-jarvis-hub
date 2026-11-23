@@ -1,0 +1,1206 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color: #edf2f7;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  padding: 8px 12px 14px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Main Floating Glass Shell */
+.hub-shell {
+  position: relative;
+  width: 100%;
+  --eye-voice: 0;
+  background: linear-gradient(165deg, rgba(15, 21, 35, 0.92) 0%, rgba(9, 13, 22, 0.95) 100%);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  box-shadow:
+    0 14px 32px -6px rgba(0, 0, 0, 0.65),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 1px 0 0 rgba(255, 255, 255, 0.14) inset;
+  overflow: hidden;
+  transition:
+    border-color 0.12s ease-out,
+    box-shadow 0.14s ease-out,
+    transform 0.14s cubic-bezier(0.22, 1.28, 0.36, 1);
+  animation: shellEntrance 0.15s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+/* Ambient Top Spotlight */
+.ambient-glow {
+  position: absolute;
+  top: -36px;
+  left: 12%;
+  width: 76%;
+  height: 68px;
+  background: radial-gradient(ellipse at center, rgba(56, 189, 248, 0.18) 0%, transparent 72%);
+  pointer-events: none;
+  z-index: 0;
+  transition: background 0.14s ease, opacity 0.14s ease;
+}
+
+/* Zero-Wait Animated Border Beam (active during command dispatch) */
+.border-beam {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  transition: opacity 0.1s ease;
+}
+
+.border-beam::before {
+  content: "";
+  position: absolute;
+  inset: -120%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 245deg,
+    rgba(56, 189, 248, 0.95) 295deg,
+    rgba(192, 132, 252, 0.95) 330deg,
+    rgba(45, 212, 191, 0.95) 355deg,
+    transparent 360deg
+  );
+  animation: borderBeamSpin 0.72s linear infinite;
+}
+
+.state-thinking .border-beam {
+  opacity: 1;
+}
+
+.hub-shell.state-listening {
+  border-color: rgba(45, 212, 191, 0.85);
+  box-shadow:
+    0 14px 34px -6px rgba(0, 0, 0, 0.65),
+    0 0 24px rgba(20, 184, 166, 0.34),
+    0 1px 0 0 rgba(153, 246, 228, 0.24) inset;
+  transition: none;
+}
+
+.hub-shell.state-listening .ambient-glow {
+  background: radial-gradient(ellipse at center, rgba(45, 212, 191, 0.34) 0%, transparent 75%);
+  transition: none;
+}
+
+.hub-shell.state-thinking {
+  border-color: rgba(168, 85, 247, 0.78);
+  box-shadow:
+    0 14px 34px -6px rgba(0, 0, 0, 0.65),
+    0 0 24px rgba(139, 92, 246, 0.32),
+    0 1px 0 0 rgba(216, 180, 254, 0.22) inset;
+}
+
+.hub-shell.state-thinking .ambient-glow {
+  background: radial-gradient(ellipse at center, rgba(168, 85, 247, 0.34) 0%, rgba(56, 189, 248, 0.18) 45%, transparent 78%);
+}
+
+.hub-shell.state-ok {
+  border-color: rgba(52, 211, 153, 0.68);
+  box-shadow:
+    0 14px 32px -6px rgba(0, 0, 0, 0.62),
+    0 0 18px rgba(16, 185, 129, 0.22),
+    0 1px 0 0 rgba(167, 243, 208, 0.18) inset;
+}
+
+.hub-shell.state-ok .ambient-glow {
+  background: radial-gradient(ellipse at center, rgba(52, 211, 153, 0.24) 0%, transparent 72%);
+}
+
+.hub-shell.state-confirm {
+  border-color: rgba(251, 191, 36, 0.88);
+  box-shadow:
+    0 14px 34px -6px rgba(0, 0, 0, 0.68),
+    0 0 24px rgba(245, 158, 11, 0.28),
+    0 1px 0 0 rgba(253, 230, 138, 0.24) inset;
+}
+
+.hub-shell.state-confirm .ambient-glow {
+  background: radial-gradient(ellipse at center, rgba(251, 191, 36, 0.3) 0%, transparent 75%);
+}
+
+.hub-shell.state-error {
+  border-color: rgba(251, 113, 133, 0.82);
+  box-shadow:
+    0 14px 32px -6px rgba(0, 0, 0, 0.65),
+    0 0 20px rgba(244, 63, 94, 0.26),
+    0 1px 0 0 rgba(254, 205, 211, 0.2) inset;
+  animation: shakeError 0.36s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+.hub-shell.state-error .ambient-glow {
+  background: radial-gradient(ellipse at center, rgba(244, 63, 94, 0.28) 0%, transparent 75%);
+}
+
+/* Pill Row */
+.pill-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  min-height: 56px;
+  -webkit-app-region: drag;
+}
+
+.eyes-wrap,
+.prompt-input,
+.live-act-pill,
+.pill-actions,
+.pill-actions button,
+.confirm-bar,
+.apikey-bar,
+.expanded-panel,
+button,
+select,
+input {
+  -webkit-app-region: no-drag;
+}
+
+/* Expressive Sci-Fi LED Eyes Face (replaces static Orb) */
+.eyes-wrap {
+  position: relative;
+  width: 44px;
+  height: 30px;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: linear-gradient(160deg, rgba(10, 17, 32, 0.96) 0%, rgba(19, 30, 52, 0.88) 100%);
+  box-shadow:
+    0 0 12px rgba(56, 189, 248, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.14) inset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: transform 0.14s cubic-bezier(0.22, 1.28, 0.36, 1), border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.eyes-wrap:hover {
+  transform: scale(1.06);
+  border-color: rgba(56, 189, 248, 0.62);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.34);
+}
+
+.eyes-wrap:active {
+  transform: scale(0.94);
+}
+
+.eyes-visor {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eyes-visor::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 5px;
+  right: 5px;
+  height: 7px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.eyes-pair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  animation: eyeGlance 6.5s ease-in-out infinite;
+  transition: transform 0.12s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.jarvis-eye {
+  position: relative;
+  width: 8px;
+  height: 12px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, #e0f2fe 0%, #38bdf8 48%, #0284c7 100%);
+  box-shadow:
+    0 0 9px rgba(56, 189, 248, 0.85),
+    0 0 3px rgba(255, 255, 255, 0.7) inset;
+  transform-origin: center center;
+  animation: eyeBlink 4.8s ease-in-out infinite;
+  transition:
+    width 0.11s ease,
+    height 0.11s ease,
+    border-radius 0.12s ease,
+    background 0.12s ease,
+    box-shadow 0.12s ease,
+    transform 0.12s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.jarvis-eye::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 1.8px;
+  width: 2.2px;
+  height: 2.2px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+/* Listening: Bright teal, slightly wide & responsive to mic voice level */
+.state-listening .eyes-wrap {
+  border-color: rgba(45, 212, 191, 0.85);
+  box-shadow: 0 0 18px rgba(45, 212, 191, 0.42);
+}
+
+.state-listening .eyes-pair {
+  animation: none;
+  transform: translateY(-0.5px);
+}
+
+.state-listening .jarvis-eye {
+  width: 8.5px;
+  height: calc(13px + var(--eye-voice, 0) * 4px);
+  background: linear-gradient(180deg, #ecfdf5 0%, #2dd4bf 45%, #0d9488 100%);
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.98);
+  animation: none;
+}
+
+/* Thinking / Dispatching: Sharp focused squint looking right (ZERO sluggish wait/spinner) */
+.state-thinking .eyes-wrap {
+  border-color: rgba(168, 85, 247, 0.85);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
+}
+
+.state-thinking .eyes-pair {
+  animation: none;
+  transform: translate(3.5px, -0.5px);
+}
+
+.state-thinking .jarvis-eye {
+  width: 9.5px;
+  height: 7.5px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #faf5ff 0%, #c084fc 45%, #38bdf8 100%);
+  box-shadow: 0 0 14px rgba(192, 132, 252, 0.98);
+  animation: none;
+}
+
+.state-thinking .eye-left {
+  transform: skewX(-10deg);
+}
+
+.state-thinking .eye-right {
+  transform: skewX(-10deg) scale(1.06);
+}
+
+/* OK: Happy ^ ^ arch bounce */
+.state-ok .eyes-wrap {
+  border-color: rgba(52, 211, 153, 0.78);
+}
+
+.state-ok .eyes-pair {
+  animation: eyeHappy 0.45s cubic-bezier(0.22, 1.35, 0.36, 1);
+}
+
+.state-ok .jarvis-eye {
+  width: 10px;
+  height: 7px;
+  border-radius: 99px 99px 2px 2px;
+  background: linear-gradient(180deg, #d1fae5 0%, #34d399 100%);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.95);
+  animation: none;
+}
+
+.state-ok .jarvis-eye::after {
+  display: none;
+}
+
+/* Confirm: Amber attentive look */
+.state-confirm .eyes-wrap {
+  border-color: rgba(251, 191, 36, 0.88);
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.35);
+}
+
+.state-confirm .jarvis-eye {
+  width: 9px;
+  height: 13px;
+  background: linear-gradient(180deg, #fef3c7 0%, #fbbf24 55%, #d97706 100%);
+  box-shadow: 0 0 13px rgba(251, 191, 36, 0.95);
+}
+
+/* Error: > < wince */
+.state-error .eyes-wrap {
+  border-color: rgba(251, 113, 133, 0.88);
+}
+
+.state-error .eyes-pair {
+  animation: none;
+}
+
+.state-error .jarvis-eye {
+  width: 9.5px;
+  height: 5.5px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffe4e6 0%, #fb7185 100%);
+  box-shadow: 0 0 12px rgba(251, 113, 133, 0.95);
+  animation: none;
+}
+
+.state-error .eye-left {
+  transform: rotate(18deg);
+}
+
+.state-error .eye-right {
+  transform: rotate(-18deg);
+}
+
+/* Live Compact Action Tick Pill inside Pill Bar */
+.live-act-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #e0f2fe;
+  background: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.36);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.18);
+  white-space: nowrap;
+  flex-shrink: 0;
+  animation: chipPop 0.14s cubic-bezier(0.22, 1.28, 0.36, 1);
+}
+
+.live-act-pill.done {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(52, 211, 153, 0.36);
+}
+
+.live-act-pill.err {
+  color: #fecdd3;
+  background: rgba(244, 63, 94, 0.18);
+  border-color: rgba(251, 113, 133, 0.42);
+}
+
+/* 7-Bar Equalizer Soundwave */
+.wave-bars {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 22px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.wave-bars span {
+  width: 3px;
+  height: 5px;
+  border-radius: 99px;
+  background: linear-gradient(180deg, #5eead4 0%, #38bdf8 100%);
+  box-shadow: 0 0 6px rgba(45, 212, 191, 0.55);
+  transition: height 0.055s ease;
+}
+
+/* Command Input */
+.prompt-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f8fafc;
+  font-size: 13.5px;
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+
+.prompt-input::placeholder {
+  color: rgba(148, 163, 184, 0.68);
+  transition: color 0.2s ease;
+}
+
+.prompt-input:focus::placeholder {
+  color: rgba(148, 163, 184, 0.45);
+}
+
+/* Pill Action Chips */
+.pill-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.chip-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.icon-chip,
+.safety-chip,
+.wake-chip,
+.stop-chip {
+  height: 25px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.055);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.12s cubic-bezier(0.22, 1.28, 0.36, 1),
+    box-shadow 0.14s ease;
+}
+
+.icon-chip {
+  width: 25px;
+  padding: 0;
+}
+
+.icon-chip:hover,
+.safety-chip:hover,
+.wake-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(203, 213, 225, 0.35);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.icon-chip:active,
+.safety-chip:active,
+.wake-chip:active,
+.stop-chip:active {
+  transform: translateY(0) scale(0.95);
+}
+
+/* Voice Toggle Active State */
+.icon-chip[data-voice="on"] {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.42);
+  background: rgba(14, 165, 233, 0.15);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.18);
+}
+
+/* Wake Chip with Live Dot */
+.wake-chip {
+  padding: 0 8px;
+  color: #94a3b8;
+}
+
+.wake-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: #64748b;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.wake-chip.active {
+  color: #5eead4;
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(20, 184, 166, 0.15);
+  box-shadow: 0 0 12px rgba(20, 184, 166, 0.16);
+}
+
+.wake-chip.active .wake-dot {
+  background: #2dd4bf;
+  box-shadow: 0 0 8px rgba(45, 212, 191, 0.9);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+/* Safety Chip */
+.safety-chip {
+  padding: 0 9px;
+}
+
+.safety-chip.safe {
+  color: #93c5fd;
+  border-color: rgba(59, 130, 246, 0.38);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.safety-chip.safe:hover {
+  background: rgba(59, 130, 246, 0.26);
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.25);
+}
+
+.safety-chip.turbo {
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.safety-chip.turbo:hover {
+  background: rgba(245, 158, 11, 0.28);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.26);
+}
+
+/* Stop Button */
+.stop-chip {
+  padding: 0 9px;
+  border-color: rgba(251, 113, 133, 0.58);
+  background: rgba(244, 63, 94, 0.24);
+  color: #ffe4e6;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(244, 63, 94, 0.25);
+  animation: chipPop 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stop-chip:hover {
+  background: rgba(244, 63, 94, 0.42);
+  border-color: rgba(251, 113, 133, 0.85);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Expand Chevron Rotation */
+.chevron-icon {
+  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.expand-chip.open .chevron-icon {
+  transform: rotate(180deg);
+}
+
+.close-chip:hover {
+  background: rgba(244, 63, 94, 0.24);
+  border-color: rgba(251, 113, 133, 0.45);
+  color: #fda4af;
+}
+
+/* Shimmer Progress Line under Pill */
+.thinking-bar {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  background: rgba(148, 163, 184, 0.08);
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 0.22s ease;
+}
+
+.state-thinking .thinking-bar,
+.state-listening .thinking-bar {
+  opacity: 1;
+}
+
+.thinking-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -45%;
+  width: 45%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #38bdf8, #a855f7, #2dd4bf, transparent);
+  animation: shimmerSweep 0.62s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
+}
+
+/* Status Toast Strip */
+.status-strip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 9px;
+  border-top: 1px solid rgba(148, 163, 184, 0.11);
+  font-size: 12px;
+  animation: slideDownFade 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.status-badge {
+  padding: 1.5px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(52, 211, 153, 0.18);
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  color: #6ee7b7;
+  flex-shrink: 0;
+}
+
+.state-listening .status-badge {
+  background: rgba(45, 212, 191, 0.18);
+  border-color: rgba(45, 212, 191, 0.38);
+  color: #5eead4;
+}
+
+.state-thinking .status-badge {
+  background: rgba(168, 85, 247, 0.2);
+  border-color: rgba(168, 85, 247, 0.38);
+  color: #d8b4fe;
+}
+
+.state-error .status-badge {
+  background: rgba(251, 113, 133, 0.2);
+  border-color: rgba(251, 113, 133, 0.38);
+  color: #fda4af;
+}
+
+.status-text {
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Confirmation Banner */
+.confirm-bar {
+  position: relative;
+  z-index: 1;
+  padding: 10px 14px 12px;
+  border-top: 1px solid rgba(251, 191, 36, 0.3);
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.12) 0%, rgba(245, 158, 11, 0.05) 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slideDownFade 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.confirm-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.confirm-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fcd34d;
+}
+
+.confirm-code {
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  color: #f1f5f9;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  padding: 6px 9px;
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+.confirm-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.btn-allow,
+.btn-deny {
+  padding: 5.5px 13px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-allow {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-allow:hover {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 15px rgba(16, 185, 129, 0.42);
+}
+
+.btn-deny {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+.btn-deny:hover {
+  background: rgba(244, 63, 94, 0.24);
+  border-color: rgba(251, 113, 133, 0.45);
+  color: #fda4af;
+  transform: translateY(-1px);
+}
+
+/* Expanded Command Hub Card */
+.expanded-panel {
+  position: relative;
+  z-index: 1;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 12px 14px 11px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  animation: slideDownFade 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.answer-card {
+  position: relative;
+  background: linear-gradient(145deg, rgba(30, 41, 59, 0.48) 0%, rgba(15, 23, 42, 0.62) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  padding: 11px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.answer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.answer-meta {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #7dd3fc;
+  letter-spacing: 0.01em;
+}
+
+.answer-tools {
+  display: flex;
+  gap: 5px;
+}
+
+.mini-btn {
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mini-btn:hover {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.mini-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+.mini-btn.copied {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(52, 211, 153, 0.55);
+  color: #6ee7b7;
+}
+
+.answer-body {
+  max-height: 185px;
+  overflow-y: auto;
+  font-size: 12.8px;
+  line-height: 1.58;
+  color: #e2e8f0;
+  user-select: text;
+  padding-right: 4px;
+}
+
+.answer-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.answer-body::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.28);
+  border-radius: 99px;
+}
+
+.answer-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.48);
+}
+
+.answer-body p + p {
+  margin-top: 6px;
+}
+
+.answer-body ul {
+  padding-left: 18px;
+  margin-top: 4px;
+}
+
+.answer-body li + li {
+  margin-top: 3px;
+}
+
+.answer-body code {
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  padding: 1px 5.5px;
+  border-radius: 5px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  color: #a5f3fc;
+}
+
+.answer-body strong {
+  color: #f8fafc;
+  font-weight: 600;
+}
+
+.muted {
+  color: #94a3b8;
+}
+
+/* Recent & Activity Rows */
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.recent-row,
+.activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.recent-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.recent-chip {
+  padding: 3.5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.045);
+  color: #cbd5e1;
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: chipPop 0.24s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.recent-chip:hover {
+  background: rgba(45, 212, 191, 0.15);
+  border-color: rgba(45, 212, 191, 0.45);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.recent-chip:active {
+  transform: translateY(0) scale(0.96);
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.act-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 4px 9px;
+  border-radius: 7px;
+  animation: slideDownFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.act-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  color: #e2e8f0;
+}
+
+.act-status-ok {
+  color: #34d399;
+  font-weight: 700;
+}
+
+.act-status-err {
+  color: #fb7185;
+  font-weight: 700;
+}
+
+.act-time {
+  font-size: 10.5px;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+
+/* Footer Health & Hotkey Picker */
+.hub-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+
+.health-dots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 9px;
+}
+
+.dot-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5.5px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #475569;
+  display: inline-block;
+  transition: background 0.25s ease, box-shadow 0.25s ease;
+}
+
+.dot-item.online .dot {
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.75);
+  animation: dotPulse 2.4s ease-in-out infinite;
+}
+
+.dot-item.warn .dot {
+  background: #fbbf24;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.65);
+}
+
+.hotkey-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hotkey-picker select {
+  background: rgba(15, 23, 42, 0.88);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 7px;
+  padding: 2.5px 7px;
+  font-size: 11px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.16s ease;
+}
+
+.hotkey-picker select:hover,
+.hotkey-picker select:focus {
+  border-color: rgba(56, 189, 248, 0.55);
+}
+
+/* API Key Setup Banner */
+.apikey-bar {
+  position: relative;
+  z-index: 1;
+  padding: 9px 14px 11px;
+  border-top: 1px solid rgba(251, 113, 133, 0.28);
+  background: rgba(244, 63, 94, 0.09);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  animation: slideDownFade 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.apikey-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(2, 6, 23, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  padding: 5.5px 9px;
+  color: #f8fafc;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.apikey-input:focus {
+  border-color: rgba(56, 189, 248, 0.68);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.18);
+}
+
+/* Keyframe Animations */
+@keyframes shellEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes borderBeamSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes eyeBlink {
+  0%, 92%, 100% {
+    transform: scaleY(1);
+  }
+  96% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes eyeGlance {
+  0%, 60%, 100% {
+    transform: translateX(0);
+  }
+  68%, 82% {
+    transform: translateX(2.5px);
+  }
+}
+
+@keyframes eyeHappy {
+  0% {
+    transform: translateY(2px) scale(0.88);
+  }
+  55% {
+    transform: translateY(-2px) scale(1.08);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideDownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes chipPop {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes shimmerSweep {
+  0% {
+    left: -45%;
+  }
+  100% {
+    left: 105%;
+  }
+}
+
+@keyframes dotPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.65;
+    transform: scale(1.18);
+  }
+}
+
+@keyframes shakeError {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  20%, 60% {
+    transform: translateX(-4px);
+  }
+  40%, 80% {
+    transform: translateX(4px);
+  }
+}

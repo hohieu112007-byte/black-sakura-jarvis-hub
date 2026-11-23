@@ -1,0 +1,30 @@
+{
+  "name": "black-sakura-jarvis-hub",
+  "productName": "Black Sakura Jarvis-Hub",
+  "version": "1.0.0",
+  "description": "Black Sakura Jarvis-Hub — Local-First Windows AI Desktop Assistant (Zero-VRAM Fast-Path + Any Ollama Model + MCP + Optional Cloud Gemini)",
+  "main": "src/main.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "build": "vite build",
+    "build:branding": "node build-branding.mjs",
+    "build:exe": "npm run build && node scripts/package-exe.mjs",
+    "test": "node test-hub.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^3.3.0",
+    "framer-motion": "^14.14.0",
+    "lucide-react": "^1.73.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.3.3",
+    "rcedit": "^5.0.2",
+    "tailwindcss": "^4.3.5",
+    "vite": "^8.3.8"
+  }
+}

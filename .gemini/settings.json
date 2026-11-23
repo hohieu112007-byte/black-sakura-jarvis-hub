@@ -1,0 +1,48 @@
+{
+    "permissions":  {
+                        "allow":  [
+                                      "mcp(playwright/*)",
+                                      "mcp(filesystem/*)",
+                                      "mcp(fast-desktop/*)",
+                                      "mcp(agent-desktop/desktop_snapshot)",
+                                      "mcp(agent-desktop/desktop_screenshot)",
+                                      "mcp(agent-desktop/desktop_find)",
+                                      "mcp(agent-desktop/desktop_get)",
+                                      "mcp(agent-desktop/desktop_is)",
+                                      "mcp(agent-desktop/desktop_list_apps)",
+                                      "mcp(agent-desktop/desktop_list_windows)",
+                                      "mcp(agent-desktop/desktop_list_displays)",
+                                      "mcp(agent-desktop/desktop_focus_window)",
+                                      "mcp(agent-desktop/desktop_move_window)",
+                                      "mcp(agent-desktop/desktop_resize_window)",
+                                      "mcp(agent-desktop/desktop_launch)",
+                                      "mcp(agent-desktop/desktop_click)",
+                                      "mcp(agent-desktop/desktop_double_click)",
+                                      "mcp(agent-desktop/desktop_right_click)",
+                                      "mcp(agent-desktop/desktop_hover)",
+                                      "mcp(agent-desktop/desktop_type)",
+                                      "mcp(agent-desktop/desktop_set_value)",
+                                      "mcp(agent-desktop/desktop_clear)",
+                                      "mcp(agent-desktop/desktop_press)",
+                                      "mcp(agent-desktop/desktop_scroll)",
+                                      "mcp(agent-desktop/desktop_scroll_to)",
+                                      "mcp(agent-desktop/desktop_wait)",
+                                      "mcp(agent-desktop/desktop_batch)",
+                                      "mcp(agent-desktop/desktop_select)",
+                                      "mcp(agent-desktop/desktop_toggle)",
+                                      "mcp(agent-desktop/desktop_expand)",
+                                      "mcp(agent-desktop/desktop_collapse)",
+                                      "mcp(agent-desktop/desktop_minimize)",
+                                      "mcp(agent-desktop/desktop_maximize)",
+                                      "mcp(agent-desktop/desktop_restore)"
+                                  ],
+                        "ask":  [
+                                    "mcp(agent-desktop/desktop_close_app)"
+                                ],
+                        "deny":  [
+                                     "mcp(agent-desktop/desktop_clipboard_get)",
+                                     "mcp(agent-desktop/desktop_clipboard_set)",
+                                     "mcp(agent-desktop/desktop_clipboard_clear)"
+                                 ]
+                    }
+}

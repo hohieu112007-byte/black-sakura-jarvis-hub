@@ -1,0 +1,38 @@
+name: Build Windows Portable EXE
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Jarvis-Hub dependencies
+        working-directory: jarvis-hub
+        run: npm ci
+
+      - name: Build HUD and package BlackSakuraJarvisHub.exe
+        working-directory: jarvis-hub
+        run: npm run build:exe
+
+      - name: Archive portable Windows release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist-exe/Black-Sakura-Jarvis-Hub/*" -DestinationPath "Black-Sakura-Jarvis-Hub-Windows-Portable.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Black-Sakura-Jarvis-Hub-Windows-Portable
+          path: Black-Sakura-Jarvis-Hub-Windows-Portable.zip
