@@ -2,7 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { spawn, execFile } from "node:child_process";
-import { FAST_DESKTOP_SERVER } from "./env-loader.mjs";
+import { FAST_DESKTOP_SERVER, SANDBOX_ROOT } from "./env-loader.mjs";
+
+function resolveNodeCommandAndEnv() {
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    const clean = dir.trim().replace(/^"|"$/g, "");
+    if (!clean) continue;
+    const cand = path.join(clean, "node.exe");
+    if (fs.existsSync(cand)) return { cmd: cand, extraEnv: {} };
+  }
+  const progNode = "C:\\Program Files\\nodejs\\node.exe";
+  if (fs.existsSync(progNode)) return { cmd: progNode, extraEnv: {} };
+  return { cmd: process.execPath, extraEnv: { ELECTRON_RUN_AS_NODE: "1" } };
+}
 
 function findCachedNpxEntry(...relParts) {
   try {
@@ -32,8 +44,11 @@ function resolveDirectAgentDesktop() {
 
 function resolveDirectNpxNode(relParts, tailArgs, pkgFallback) {
   const entry = findCachedNpxEntry(...relParts);
-  if (entry) return { cmd: process.execPath === process.argv[0] && /node(\.exe)?$/i.test(process.execPath) ? process.execPath : "node", args: [entry, ...tailArgs] };
-  return { cmd: "cmd.exe", args: ["/c", "npx", "-y", pkgFallback, ...tailArgs] };
+  if (entry) {
+    const rt = resolveNodeCommandAndEnv();
+    return { cmd: rt.cmd, args: [entry, ...tailArgs], extraEnv: rt.extraEnv };
+  }
+  return { cmd: "cmd.exe", args: ["/c", "npx", "-y", pkgFallback, ...tailArgs], extraEnv: {} };
 }
 
 const READ_ONLY_TOOLS = new Set([
@@ -64,10 +79,11 @@ const READ_ONLY_TOOLS = new Set([
 ]);
 
 class StdioMcpClient {
-  constructor(name, command, args, timeoutMs = 25000, idleTimeoutMs = 0) {
+  constructor(name, command, args, timeoutMs = 25000, idleTimeoutMs = 0, extraEnv = {}) {
     this.name = name;
     this.command = command;
     this.args = args;
+    this.extraEnv = extraEnv || {};
     this.timeoutMs = timeoutMs;
     this.idleTimeoutMs = idleTimeoutMs;
     this.idleTimer = null;
@@ -97,6 +113,7 @@ class StdioMcpClient {
       this.proc = spawn(this.command, this.args, {
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
+        env: { ...process.env, ...this.extraEnv },
       });
 
       this.rl = readline.createInterface({ input: this.proc.stdout });
@@ -220,25 +237,26 @@ export class McpHub {
     this.onConfirmRequest = onConfirmRequest;
     this.onActivity = onActivity;
 
+    const nodeRT = resolveNodeCommandAndEnv();
     const agentTarget = resolveDirectAgentDesktop();
     const pwTarget = resolveDirectNpxNode(
       ["@playwright", "mcp", "cli.js"],
-      ["--user-data-dir", "C:\\AI-Sandbox\\browser-profile"],
+      ["--user-data-dir", path.join(SANDBOX_ROOT, "browser-profile")],
       "@playwright/mcp@latest"
     );
     const fsTarget = resolveDirectNpxNode(
       ["@modelcontextprotocol", "server-filesystem", "dist", "index.js"],
-      ["C:\\AI-Sandbox"],
+      [SANDBOX_ROOT],
       "@modelcontextprotocol/server-filesystem"
     );
 
     this.clients = {
-      fastDesktop: new StdioMcpClient("fast-desktop", "node", [FAST_DESKTOP_SERVER], 35000, 0),
+      fastDesktop: new StdioMcpClient("fast-desktop", nodeRT.cmd, [FAST_DESKTOP_SERVER], 35000, 0, nodeRT.extraEnv),
       // Keep native agent-desktop (~11MB RAM) warm permanently without cmd.exe wrapper (prevents console flashes)
       agentDesktop: new StdioMcpClient("agent-desktop", agentTarget.cmd, agentTarget.args, 35000, 0),
       // Auto-reap heavy Node MCP servers after 3 minutes of inactivity to keep RAM lean
-      playwright: new StdioMcpClient("playwright", pwTarget.cmd, pwTarget.args, 45000, 180000),
-      filesystem: new StdioMcpClient("filesystem", fsTarget.cmd, fsTarget.args, 25000, 180000),
+      playwright: new StdioMcpClient("playwright", pwTarget.cmd, pwTarget.args, 45000, 180000, pwTarget.extraEnv),
+      filesystem: new StdioMcpClient("filesystem", fsTarget.cmd, fsTarget.args, 25000, 180000, fsTarget.extraEnv),
     };
   }
 

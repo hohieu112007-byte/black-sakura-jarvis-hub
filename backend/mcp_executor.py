@@ -48,14 +48,31 @@ def _find_npx_entry(*parts: str) -> Optional[Path]:
     return None
 
 
+def _resolve_node_runtime() -> tuple[str, Dict[str, str]]:
+    """Use system node.exe when available; fall back to Electron runtime with ELECTRON_RUN_AS_NODE=1 for zero-Node portable PCs."""
+    env = dict(os.environ)
+    node_bin = shutil.which("node")
+    if not node_bin:
+        prog_node = Path(r"C:\Program Files\nodejs\node.exe")
+        if prog_node.is_file():
+            node_bin = str(prog_node)
+    if node_bin:
+        return node_bin, env
+    electron_exe = env.get("JARVIS_ELECTRON_EXE", "").strip()
+    if electron_exe and Path(electron_exe).is_file():
+        env["ELECTRON_RUN_AS_NODE"] = "1"
+        return electron_exe, env
+    return "node", env
+
+
 def _build_server_params(server_key: str) -> StdioServerParameters:
     if server_key == "fast_desktop":
-        node_bin = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
+        node_bin, node_env = _resolve_node_runtime()
         return StdioServerParameters(
             command=node_bin,
             args=[str(FAST_DESKTOP_ENTRY)],
             cwd=str(FAST_DESKTOP_ENTRY.parent),
-            env=dict(os.environ),
+            env=node_env,
         )
     if server_key == "agent_desktop":
         direct_exe = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules" / "agent-desktop" / "bin" / "agent-desktop-win32-x64.exe"
@@ -75,11 +92,11 @@ def _build_server_params(server_key: str) -> StdioServerParameters:
         PLAYWRIGHT_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
         pw_cli = _find_npx_entry("@playwright", "mcp", "cli.js")
         if pw_cli is not None:
-            node_bin = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
+            node_bin, node_env = _resolve_node_runtime()
             return StdioServerParameters(
                 command=node_bin,
                 args=[str(pw_cli), "--user-data-dir", str(PLAYWRIGHT_PROFILE_DIR)],
-                env=dict(os.environ),
+                env=node_env,
             )
         cmd_bin = shutil.which("cmd.exe") or "cmd.exe"
         return StdioServerParameters(

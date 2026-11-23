@@ -81,6 +81,12 @@ Script sẽ tự động:
 
 ## 5. Khắc phục sự cố nhanh
 
-- **HUD báo chưa kết nối Backend (`:8765`):** Chạy `start_backend.bat` để xem log trực tiếp, kiểm tra xem Python đã cài đủ `requirements.txt` chưa.
+- **Windows SmartScreen cảnh báo hoặc chặn file sau khi giải nén từ `.zip`:**  
+  Khi tải `.zip` từ GitHub và giải nén bằng Windows Explorer, Windows có thể gắn cờ `Zone.Identifier`. Ngoài việc `BlackSakuraJarvisHub.exe` đã tự dự phòng `hotkey-helper.ps1` nếu `JarvisWakeHelper.exe` không khởi chạy được, bạn có thể bỏ chặn toàn bộ thư mục vừa giải nén bằng PowerShell:
+  ```powershell
+  Get-ChildItem -Path "D:\ThuMuc\Black-Sakura-Jarvis-Hub" -Recurse | Unblock-File
+  ```
+- **Máy chưa cài Node.js:** Bản Portable dùng trực tiếp runtime Node tích hợp sẵn trong `BlackSakuraJarvisHub.exe` (`ELECTRON_RUN_AS_NODE=1`) để chạy `fast-desktop-mcp` mà không cần cài Node.js riêng.
+- **HUD báo chưa kết nối Backend (`:8765`):** Chạy `start_backend.bat` để xem log trực tiếp, kiểm tra xem Python thật (không phải stub `WindowsApps`) đã cài đủ `requirements.txt` chưa. Nếu cổng `8765` đang bị app khác chiếm, Hub tự chuyển sang cổng trống (`18765–18769`).
 - **Lỗi `401 Unauthorized` khi gọi API thủ công:** Backend yêu cầu header `X-Jarvis-Token` lấy từ file `backend/.session_token` để chống website bên ngoài điều khiển trộm PC. Khởi động lại cả Backend và HUD để đồng bộ token phiên mới.
-- **Máy báo chưa có Ollama:** Không ảnh hưởng đến Tầng 1. Cài Ollama tại `ollama.com` hoặc bật Cloud Gemini API trong Settings nếu cần AI suy luận phức tạp.
+- **Máy báo chưa có Ollama:** Không ảnh hưởng đến Tầng 1. Cài Ollama ngay trong Setup Wizard (1 chạm) hoặc bật Cloud Gemini API trong Settings nếu cần AI suy luận phức tạp.

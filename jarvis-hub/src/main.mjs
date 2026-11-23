@@ -198,25 +198,61 @@ async function maybeAttachLocalTts(text) {
   return {};
 }
 
-function resolvePythonExecutable() {
-  const venvCandidates = [
-    path.join(WORKSPACE_ROOT, ".venv", "Scripts", "pythonw.exe"),
-    path.join(WORKSPACE_ROOT, ".venv", "Scripts", "python.exe"),
-    path.join(WORKSPACE_ROOT, "venv", "Scripts", "pythonw.exe"),
-    path.join(WORKSPACE_ROOT, "venv", "Scripts", "python.exe"),
+function isRealPythonExe(filePath) {
+  try {
+    if (!filePath || filePath.toLowerCase().includes(`${path.sep}microsoft${path.sep}windowsapps${path.sep}`)) {
+      return false;
+    }
+    const st = fs.statSync(filePath);
+    return st.isFile() && st.size > 50000;
+  } catch {
+    return false;
+  }
+}
+
+function resolvePythonExecutable({ preferConsole = false } = {}) {
+  const names = preferConsole ? ["python.exe", "pythonw.exe"] : ["pythonw.exe", "python.exe"];
+  const venvDirs = [
+    path.join(WORKSPACE_ROOT, ".venv", "Scripts"),
+    path.join(WORKSPACE_ROOT, "venv", "Scripts"),
   ];
-  for (const cand of venvCandidates) {
-    if (fs.existsSync(cand)) return cand;
+  for (const dir of venvDirs) {
+    for (const nm of names) {
+      const cand = path.join(dir, nm);
+      if (isRealPythonExe(cand)) return cand;
+    }
   }
-  const localApp = process.env.LOCALAPPDATA || "";
-  for (const ver of ["Python313", "Python312", "Python311", "Python310"]) {
-    const pyDir = path.join(localApp, "Programs", "Python", ver);
-    const pyw = path.join(pyDir, "pythonw.exe");
-    if (fs.existsSync(pyw)) return pyw;
-    const py = path.join(pyDir, "python.exe");
-    if (fs.existsSync(py)) return py;
+  const searchBases = [
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python"),
+    path.join(process.env.ProgramFiles || "C:\\Program Files"),
+    "C:\\",
+  ];
+  for (const base of searchBases) {
+    for (const ver of ["Python314", "Python313", "Python312", "Python311", "Python310"]) {
+      const pyDir = path.join(base, ver);
+      for (const nm of names) {
+        const cand = path.join(pyDir, nm);
+        if (isRealPythonExe(cand)) return cand;
+      }
+    }
   }
-  return "python";
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    const cleanDir = dir.trim().replace(/^"|"$/g, "");
+    if (!cleanDir) continue;
+    for (const nm of names) {
+      const cand = path.join(cleanDir, nm);
+      if (isRealPythonExe(cand)) return cand;
+    }
+  }
+  return "";
+}
+
+function isZoneBlocked(filePath) {
+  try {
+    return Boolean(filePath && fs.existsSync(`${filePath}:Zone.Identifier`));
+  } catch {
+    return false;
+  }
 }
 
 function resolveOllamaLaunch() {
@@ -311,6 +347,9 @@ async function ensureLocalBackendRunning(installedApps = []) {
         }
         activeBackendPort = chosenPort;
         const pyExe = resolvePythonExecutable();
+        if (!pyExe) {
+          return;
+        }
         if (!localBackendProc) {
           localBackendProc = spawn(
             pyExe,
@@ -319,7 +358,11 @@ async function ensureLocalBackendRunning(installedApps = []) {
               cwd: WORKSPACE_ROOT,
               stdio: "ignore",
               windowsHide: true,
-              env: { ...process.env, JARVIS_BACKEND_PORT: String(chosenPort) },
+              env: {
+                ...process.env,
+                JARVIS_BACKEND_PORT: String(chosenPort),
+                JARVIS_ELECTRON_EXE: process.execPath,
+              },
             }
           );
           localBackendProc.on("error", () => {
@@ -382,6 +425,8 @@ let hoverSafetyTimer = null;
 let isQuittingHub = false;
 let wakeRestartTimer = null;
 let lastWakeAcceptedAt = 0;
+let preferPsWakeFallback = false;
+let wakeRestartCount = 0;
 
 function appendWakeLog(line) {
   try {
@@ -895,10 +940,14 @@ function startHotkeyHelper() {
     "-WakeSensitivity",
     sanitizeWakeSensitivity(hubState.wakeSensitivity),
   ];
-  if (fs.existsSync(nativeHelperExe)) {
+  const useNativeExe = !preferPsWakeFallback && fs.existsSync(nativeHelperExe);
+  const spawnedAt = Date.now();
+  let gotValidEvent = false;
+  if (useNativeExe) {
     hotkeyProc = spawn(nativeHelperExe, wakeArgs, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   } else {
     const helperScript = path.join(__dirname, "hotkey-helper.ps1");
+    if (!fs.existsSync(helperScript)) return;
     hotkeyProc = spawn(
       "powershell.exe",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helperScript, ...wakeArgs],
@@ -906,7 +955,22 @@ function startHotkeyHelper() {
     );
   }
 
-  const rl = readline.createInterface({ input: hotkeyProc.stdout });
+  const procRef = hotkeyProc;
+  procRef.on("error", (err) => {
+    appendWakeLog(`HELPER_SPAWN_ERROR native=${useNativeExe} msg=${err?.message || err}`);
+    if (hotkeyProc === procRef) hotkeyProc = null;
+    if (useNativeExe) {
+      preferPsWakeFallback = true;
+      if (!isQuittingHub) {
+        clearTimeout(wakeRestartTimer);
+        wakeRestartTimer = setTimeout(() => {
+          if (!isQuittingHub && !hotkeyProc) startHotkeyHelper();
+        }, 300);
+      }
+    }
+  });
+
+  const rl = readline.createInterface({ input: procRef.stdout });
   rl.on("line", (line) => {
     const trimmed = line.trim();
     if (!trimmed) return;
@@ -916,6 +980,8 @@ function startHotkeyHelper() {
     } catch {
       return;
     }
+    gotValidEvent = true;
+    wakeRestartCount = 0;
 
     if (msg.event === "registered") {
       emitHud({ type: "hotkey_registered", spec: msg.spec, ok: msg.ok });
@@ -1004,16 +1070,31 @@ function startHotkeyHelper() {
     }
   });
 
-  const procRef = hotkeyProc;
   procRef.on("exit", (code) => {
     if (hotkeyProc === procRef) hotkeyProc = null;
-    if (!isQuittingHub) {
-      appendWakeLog(`HELPER_EXIT code=${code} -> restarting`);
+    if (isQuittingHub) return;
+    const ranMs = Date.now() - spawnedAt;
+    if (useNativeExe && !gotValidEvent && ranMs < 3500) {
+      // Native JarvisWakeHelper.exe failed to initialize (e.g. SmartScreen/Antivirus/missing .NET) -> fall back to PowerShell
+      preferPsWakeFallback = true;
+      appendWakeLog(`NATIVE_HELPER_FAILED code=${code} ranMs=${ranMs} -> switching to PowerShell fallback`);
       clearTimeout(wakeRestartTimer);
       wakeRestartTimer = setTimeout(() => {
         if (!isQuittingHub && !hotkeyProc) startHotkeyHelper();
-      }, 900);
+      }, 350);
+      return;
     }
+    wakeRestartCount += 1;
+    if (wakeRestartCount > 5) {
+      appendWakeLog(`HELPER_STOPPED_AFTER_RETRIES count=${wakeRestartCount}`);
+      return;
+    }
+    const backoffMs = Math.min(8000, 900 * wakeRestartCount);
+    appendWakeLog(`HELPER_EXIT code=${code} -> restarting in ${backoffMs}ms`);
+    clearTimeout(wakeRestartTimer);
+    wakeRestartTimer = setTimeout(() => {
+      if (!isQuittingHub && !hotkeyProc) startHotkeyHelper();
+    }, backoffMs);
   });
 }
 
@@ -1159,6 +1240,9 @@ function updateTrayMenu() {
     {
       label: "Mở thư mục Exports",
       click: () => {
+        try {
+          fs.mkdirSync(EXPORTS_DIR, { recursive: true });
+        } catch {}
         execFile("explorer.exe", [EXPORTS_DIR], { windowsHide: true });
       },
     },
@@ -1399,8 +1483,12 @@ function registerIpc() {
   });
 
   ipcMain.handle("hub:get-setup-diagnostics", async () => {
-    const pyExe = resolvePythonExecutable();
+    const pyExe = resolvePythonExecutable({ preferConsole: true });
     const ollLaunch = resolveOllamaLaunch();
+    const wakeExe = [
+      path.join(__dirname, "..", "runtime", "JarvisWakeHelper.exe"),
+      path.join(WORKSPACE_ROOT, "JarvisWakeHelper.exe"),
+    ].find((p) => fs.existsSync(p));
     // Kick off backend boot in background without blocking Setup Wizard UI for 12s
     void ensureLocalBackendRunning(agent?.installedApps || []).catch(() => {});
     const [backendStatus, ollamaDirect] = await Promise.all([
@@ -1413,8 +1501,10 @@ function registerIpc() {
       displayMode: hubState.displayMode || "cursor",
       safetyMode: currentSafetyMode,
       activeBackendPort,
+      workspaceRoot: WORKSPACE_ROOT,
       pythonExe: pyExe,
-      pythonFound: pyExe === "python" ? true : fs.existsSync(pyExe),
+      pythonFound: Boolean(pyExe),
+      wakeHelperBlocked: isZoneBlocked(wakeExe),
       ollamaInstalled: Boolean(ollLaunch || ollamaDirect.online || backendStatus?.ollama_installed),
       ollamaOnline: Boolean(ollamaDirect.online || backendStatus?.ollama_online),
       ollamaModels:
@@ -1592,12 +1682,11 @@ function registerIpc() {
     if (!fs.existsSync(reqFile)) {
       return { ok: false, error: "Không tìm thấy file requirements.txt." };
     }
-    let pyExe = resolvePythonExecutable();
-    if (pyExe.toLowerCase().endsWith("pythonw.exe")) {
-      const consolePy = pyExe.slice(0, -11) + "python.exe";
-      if (fs.existsSync(consolePy)) pyExe = consolePy;
+    let pyExe = resolvePythonExecutable({ preferConsole: true });
+    if (!pyExe) {
+      return { ok: false, error: "Chưa tìm thấy Python 3.10+ trên máy. Hãy cài Python trước (tích Add python.exe to PATH)." };
     }
-    emitSetupProgress({ task: "pip-install", message: "Đang chạy pip install -r requirements.txt..." });
+    emitSetupProgress({ task: "pip-install", message: `Đang chạy "${pyExe}" -m pip install -r requirements.txt...` });
     const res = await new Promise((resolve) => {
       let lastLine = "";
       const proc = spawn(pyExe, ["-m", "pip", "install", "-r", reqFile], {
@@ -2227,6 +2316,9 @@ function registerIpc() {
   });
 
   ipcMain.handle("hub:open-exports", () => {
+    try {
+      fs.mkdirSync(EXPORTS_DIR, { recursive: true });
+    } catch {}
     execFile("explorer.exe", [EXPORTS_DIR], { windowsHide: true });
     return true;
   });

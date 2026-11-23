@@ -603,22 +603,56 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Python deps 1-click helper if backend isn't online yet */}
+              {/* Python missing or deps 1-click helper if backend isn't online yet */}
               {!backend && (
                 <div className="p-2.5 rounded-xl bg-zinc-100 border border-[#0E0E13]/30 text-[11px] flex items-center justify-between gap-2">
                   <span>
-                    {lang === "en"
-                      ? "Fresh Windows PC? Click right to auto-install Python packages."
-                      : "Máy mới chưa cài gói Python? Bấm nút bên phải để cài tự động."}
+                    {diag?.pythonFound === false
+                      ? lang === "en"
+                        ? "Python 3.10+ not detected on this PC (ignore Microsoft Store stub). Install Python first:"
+                        : "Chưa tìm thấy Python 3.10+ thật trên máy. Hãy cài Python trước (tích Add to PATH):"
+                      : lang === "en"
+                        ? "Fresh Windows PC? Click right to auto-install Python packages."
+                        : "Máy mới chưa cài gói Python? Bấm nút bên phải để cài tự động."}
                   </span>
-                  <button
-                    type="button"
-                    disabled={taskBusy}
-                    onClick={handleInstallPythonDeps}
-                    className="px-2.5 py-1 rounded-lg bg-[#0E0E13] text-white font-black text-[10.5px] shrink-0 cursor-pointer disabled:opacity-50"
-                  >
-                    {lang === "en" ? "Install Python Deps" : "Cài Python Deps"}
-                  </button>
+                  {diag?.pythonFound === false ? (
+                    <button
+                      type="button"
+                      onClick={() => openUrl("https://www.python.org/downloads/")}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0E0E13] text-white font-black text-[10.5px] shrink-0 cursor-pointer"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>python.org</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={taskBusy}
+                      onClick={handleInstallPythonDeps}
+                      className="px-2.5 py-1 rounded-lg bg-[#0E0E13] text-white font-black text-[10.5px] shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {lang === "en" ? "Install Python Deps" : "Cài Python Deps"}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Windows Mark-of-the-Web advisory if JarvisWakeHelper.exe carries Zone.Identifier */}
+              {diag?.wakeHelperBlocked && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-[10.5px] text-rose-950 space-y-1">
+                  <div className="font-black">
+                    {lang === "en"
+                      ? "Windows SmartScreen flag detected on extracted Wake Helper"
+                      : "Phát hiện cờ SmartScreen (Zone.Identifier) trên file phụ vừa giải nén"}
+                  </div>
+                  <div>
+                    {lang === "en"
+                      ? "Hub will automatically fall back to PowerShell if Windows blocks JarvisWakeHelper.exe. Optionally run Unblock-File in PowerShell on your Hub folder for fastest native wake-word speed."
+                      : "Hub tự động dự phòng bằng PowerShell nếu Windows chặn JarvisWakeHelper.exe. Bạn có thể tự bỏ chặn thư mục sau giải nén bằng PowerShell: "}
+                    <code className="px-1 py-0.5 rounded bg-white border border-rose-300 font-mono text-[9.5px]">
+                      Get-ChildItem -Recurse | Unblock-File
+                    </code>
+                  </div>
                 </div>
               )}
 
