@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("jarvisApi", {
   setLocalModel: (presetId) => ipcRenderer.invoke("hub:set-local-model", presetId),
   setSakugaEnabled: (enabled) => ipcRenderer.invoke("hub:set-sakuga", Boolean(enabled)),
   setDisplayMode: (mode) => ipcRenderer.invoke("hub:set-display-mode", mode),
+  setUiLanguage: (lang) => ipcRenderer.invoke("hub:set-ui-language", lang),
   saveDictionaryWord: (word) => ipcRenderer.invoke("hub:save-dict-word", word),
   removeDictionaryWord: (word) => ipcRenderer.invoke("hub:remove-dict-word", word),
   openExportsDir: () => ipcRenderer.invoke("hub:open-exports"),

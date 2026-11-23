@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { Volume2, FileText, Copy, Check, History, Activity } from "lucide-react";
+import { useT } from "../i18n.js";
 
 function renderInlineMarkdown(text) {
   const parts = String(text || "").split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
@@ -50,10 +51,12 @@ export function ExpandedPanel({
   recentCommands,
   activities,
   hotkeyLabel,
+  uiLanguage = "vi",
   onSpeak,
   onExportWord,
   onRunCommand,
 }) {
+  const t = useT(uiLanguage);
   const [copied, setCopied] = useState(false);
   const [speakingBusy, setSpeakingBusy] = useState(false);
   const [wordStatus, setWordStatus] = useState("");
@@ -105,31 +108,31 @@ export function ExpandedPanel({
             type="button"
             onClick={handleSpeak}
             disabled={!answerText || speakingBusy}
-            title={answerText ? "Đọc thành tiếng bằng TTS Local" : "Chưa có câu trả lời để đọc"}
+            title={t.speakBtn}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] disabled:opacity-35 text-[10.5px] font-bold cursor-pointer transition-colors"
           >
             <Volume2 className="w-3 h-3" />
-            <span>{speakingBusy ? "Đang tải..." : "Đọc"}</span>
+            <span>{speakingBusy ? t.speakingBtn : t.speakBtn}</span>
           </button>
           <button
             type="button"
             onClick={handleExportWord}
             disabled={!answerText || wordStatus === "busy"}
-            title={answerText ? "Xuất câu trả lời ra file Word (.docx)" : "Chưa có câu trả lời để xuất Word"}
+            title={t.wordBtn}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] disabled:opacity-35 text-[10.5px] font-bold cursor-pointer transition-colors"
           >
             {wordStatus === "ok" ? <Check className="w-3 h-3 text-emerald-600" /> : <FileText className="w-3 h-3" />}
-            <span>{wordStatus === "busy" ? "Đang xuất..." : wordStatus === "ok" ? "Đã xuất" : wordStatus === "err" ? "Lỗi" : "Word"}</span>
+            <span>{wordStatus === "busy" ? t.wordBusy : wordStatus === "ok" ? t.wordOk : wordStatus === "err" ? t.wordErr : t.wordBtn}</span>
           </button>
           <button
             type="button"
             onClick={handleCopy}
             disabled={!answerText}
-            title={answerText ? "Sao chép vào Clipboard" : "Chưa có câu trả lời để sao chép"}
+            title={t.copyBtn}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] disabled:opacity-35 text-[10.5px] font-bold cursor-pointer transition-colors"
           >
             {copied ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
-            <span>{copied ? "Đã chép" : "Copy"}</span>
+            <span>{copied ? t.copiedBtn : t.copyBtn}</span>
           </button>
         </div>
       </div>
@@ -140,8 +143,7 @@ export function ExpandedPanel({
           <SafeMarkdown text={answerText} />
         ) : (
           <p className="text-[11.5px] text-zinc-600 leading-relaxed">
-            Nói <strong className="text-[#0E0E13]">"Hey Jarvis"</strong> bất kỳ lúc nào hoặc giữ{" "}
-            <strong className="text-[#0E0E13]">{hotkeyLabel}</strong> để ra lệnh trực tiếp (bấm nháy để gõ nhanh).
+            {t.emptyAnswerHintPrefix} <strong className="text-[#0E0E13]">{hotkeyLabel}</strong> {t.emptyAnswerHintSuffix}
           </p>
         )}
       </div>
@@ -151,7 +153,7 @@ export function ExpandedPanel({
         <div className="pt-2 border-t-2 border-[#0E0E13]/15 space-y-1.5">
           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-600">
             <History className="w-3 h-3" />
-            <span>Lệnh gần đây</span>
+            <span>{t.recentCommands}</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {recentCommands.map((cmd) => (
@@ -174,7 +176,7 @@ export function ExpandedPanel({
         <div className="pt-2 border-t-2 border-[#0E0E13]/15 space-y-1">
           <div className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-zinc-600">
             <Activity className="w-3 h-3" />
-            <span>Tiến trình MCP</span>
+            <span>{t.mcpActivity}</span>
           </div>
           <div className="space-y-1">
             {activities.slice(0, 3).map((act, idx) => (

@@ -204,6 +204,7 @@ export function loadHubState() {
     sakugaEnabled: true,
     displayMode: "cursor",
     onboardingCompleted: false,
+    uiLanguage: "vi",
   };
   try {
     if (!fs.existsSync(STATE_FILE)) return defaults;
@@ -236,6 +237,7 @@ export function loadHubState() {
       sakugaEnabled: parsed.sakugaEnabled !== false,
       displayMode: loadedDisplayMode,
       onboardingCompleted: parsed.onboardingCompleted === true,
+      uiLanguage: parsed.uiLanguage === "en" ? "en" : "vi",
     };
   } catch {
     return defaults;

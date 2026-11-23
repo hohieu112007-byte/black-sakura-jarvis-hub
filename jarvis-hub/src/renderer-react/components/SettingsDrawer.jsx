@@ -22,7 +22,9 @@ import {
   Sparkles,
   Gamepad2,
   Monitor,
+  Languages,
 } from "lucide-react";
+import { useT } from "../i18n.js";
 
 const LOCAL_BACKEND_URL = "http://127.0.0.1:8765";
 
@@ -140,6 +142,7 @@ export function SettingsDrawer({
   onToggleVoiceAlways,
   onToggleSakuga,
   onChangeDisplayMode,
+  onChangeUiLanguage,
   onRecenter,
   onVramUnload,
   onPreviewVfx,
@@ -150,6 +153,14 @@ export function SettingsDrawer({
   onOpenExports,
   onHideHub,
 }) {
+  const uiLang = hubState.uiLanguage === "en" ? "en" : "vi";
+  const t = useT(uiLang);
+  const localizedTabs = [
+    { id: "ai", label: t.tabAi, Icon: Cpu },
+    { id: "general", label: t.tabGeneral, Icon: SlidersHorizontal },
+    { id: "pair", label: t.tabPair, Icon: Link2 },
+    { id: "shortcuts", label: t.tabShortcuts, Icon: Keyboard },
+  ];
   const [activeTab, setActiveTab] = useState("ai");
   const [dictInput, setDictInput] = useState("");
   const [wakeNameInput, setWakeNameInput] = useState(hubState.wakeName || "Luna");
@@ -426,6 +437,21 @@ export function SettingsDrawer({
               {vramNotice}
             </span>
           )}
+          <div className="flex items-center rounded border-2 border-[#0E0E13] overflow-hidden">
+            {["vi", "en"].map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => onChangeUiLanguage?.(code)}
+                title={code === "en" ? "Switch UI to English" : "Chuyển giao diện sang Tiếng Việt"}
+                className={`px-1.5 py-0.5 text-[9px] font-black uppercase cursor-pointer ${
+                  uiLang === code ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
+                }`}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
           <span
             className={`px-2 py-0.5 rounded text-[9.5px] font-black border-2 border-[#0E0E13] ${
               sakugaOn ? "bg-[#0E0E13] text-white" : "bg-zinc-200 text-zinc-600"
@@ -438,7 +464,7 @@ export function SettingsDrawer({
 
       {/* Balanced 4-Tab Bar */}
       <div className="grid grid-cols-4 gap-1 p-1 rounded-xl bg-zinc-100 border-2 border-[#0E0E13] mb-2.5">
-        {TABS.map(({ id, label, Icon }) => {
+        {localizedTabs.map(({ id, label, Icon }) => {
           const active = activeTab === id;
           return (
             <button
@@ -495,7 +521,7 @@ export function SettingsDrawer({
                                 ? " · Đang ghim"
                                 : ""
                           }`
-                        : "Không có model nào trong VRAM (0 MB)"}
+                        : t.noVramModel}
                   </div>
                 </div>
                 <button
@@ -503,10 +529,10 @@ export function SettingsDrawer({
                   data-sakuga-power="heavy"
                   onClick={handleUnloadVram}
                   className="h-7 shrink-0 inline-flex items-center gap-1 px-2.5 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white sakuga-btn text-[10.5px] font-black text-[#0E0E13] whitespace-nowrap cursor-pointer"
-                  title="Giải phóng toàn bộ VRAM ngay lập tức"
+                  title={t.unloadVram}
                 >
                   <Trash2 className="w-3 h-3" />
-                  <span>Xả VRAM</span>
+                  <span>{t.unloadVram}</span>
                 </button>
               </div>
               <div className="w-full h-1.5 rounded-full bg-zinc-200 overflow-hidden border border-[#0E0E13]">
@@ -517,11 +543,11 @@ export function SettingsDrawer({
               </div>
               {backendStatus?.external_ai_active && (
                 <div className="text-[10px] font-bold px-2 py-1 rounded-lg bg-amber-50 border border-amber-400 text-amber-950">
-                  Đang chia sẻ GPU với app AI khác
+                  {t.gpuShareWarning}
                   {typeof backendStatus.gpu_vram_free_gb === "number"
-                    ? ` (trống ${backendStatus.gpu_vram_free_gb} GB)`
+                    ? ` (${t.gpuShareFree} ${backendStatus.gpu_vram_free_gb} GB)`
                     : ""}{" "}
-                  · Tự động bảo vệ VRAM (không xả model của app khác).
+                  · {t.gpuShareProtect}
                 </div>
               )}
             </div>
@@ -529,7 +555,7 @@ export function SettingsDrawer({
             {/* Model Picker (Compact 3-Column Row) */}
             <div className="space-y-1">
               <div className="text-[10.5px] font-black uppercase tracking-wider text-zinc-600 px-0.5">
-                Model AI Local (Ollama)
+                {t.localAiSection}
               </div>
               <div className="grid grid-cols-3 gap-1.5">
                 {LOCAL_MODELS.map((m) => {
@@ -564,11 +590,9 @@ export function SettingsDrawer({
               {backendStatus && !ollamaOnline && (
                 <div className="p-2 rounded-xl bg-amber-50 border-2 border-[#0E0E13] text-[10px] leading-snug text-[#0E0E13] space-y-1">
                   <div className="font-black">
-                    {ollamaInstalled ? "Ollama chưa chạy" : "Chưa cài Ollama trên máy"}
+                    {ollamaInstalled ? t.ollamaNotRunning : t.ollamaNotInstalled}
                   </div>
-                  <div className="text-zinc-700">
-                    Tầng 1 (mở/đóng app, tab, âm lượng, màn hình) & Cloud Gemini API vẫn chạy bình thường. Để dùng AI Local miễn phí: tải tại <b>ollama.com</b> rồi chạy <code className="px-1 py-0.5 rounded bg-white border border-[#0E0E13]/30 font-mono text-[9.5px]">ollama pull qwen3.5:4b</code> (hoặc model nhẹ hơn).
-                  </div>
+                  <div className="text-zinc-700">{t.ollamaHint}</div>
                 </div>
               )}
 
@@ -576,10 +600,10 @@ export function SettingsDrawer({
               <div className="p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1.5">
                 <div className="flex items-center justify-between gap-1">
                   <span className="text-[10px] font-black text-[#0E0E13]">
-                    Model khác trên Ollama ({installedOllamaModels.length})
+                    {t.otherOllamaModels} ({installedOllamaModels.length})
                   </span>
                   <span className="text-[9.5px] font-bold text-zinc-500 truncate max-w-[130px]" title={backendStatus?.current_model || selectedModel}>
-                    Đang dùng: {backendStatus?.current_model || selectedModel}
+                    {t.usingModel} {backendStatus?.current_model || selectedModel}
                   </span>
                 </div>
                 {installedOllamaModels.length > 0 && (
@@ -606,14 +630,14 @@ export function SettingsDrawer({
                     type="text"
                     value={customModelInput}
                     onChange={(e) => setCustomModelInput(e.target.value)}
-                    placeholder="Nhập tên model Ollama bất kỳ (vd: llama3.2:3b, gemma3:4b)"
+                    placeholder={t.customModelPlaceholder}
                     className="flex-1 h-6.5 px-2 rounded-lg text-[10px] border border-[#0E0E13]/40 bg-zinc-50 text-[#0E0E13] focus:outline-none focus:border-[#0E0E13]"
                   />
                   <button
                     type="submit"
                     className="h-6.5 px-2 rounded-lg text-[10px] font-black bg-[#0E0E13] text-white cursor-pointer shrink-0"
                   >
-                    Chọn
+                    {t.chooseBtn}
                   </button>
                 </form>
               </div>
@@ -623,7 +647,7 @@ export function SettingsDrawer({
             <div className="grid grid-cols-1 gap-2">
               <div className="p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10.5px] font-extrabold text-[#0E0E13]">Bộ nhớ ngữ cảnh (Context)</span>
+                  <span className="text-[10.5px] font-extrabold text-[#0E0E13]">{t.contextTitle}</span>
                   <span className="text-[9.5px] font-black text-zinc-600">{Math.round(numCtx / 1024)}K Tokens</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -648,7 +672,7 @@ export function SettingsDrawer({
 
               <div className="p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10.5px] font-extrabold text-[#0E0E13]">Mức suy nghĩ (Thinking)</span>
+                  <span className="text-[10.5px] font-extrabold text-[#0E0E13]">{t.thinkingTitle}</span>
                   <span className="text-[9.5px] font-black text-zinc-600">
                     {THINKING_OPTIONS.find((o) => o.id === thinkingMode)?.label}
                   </span>
@@ -679,7 +703,7 @@ export function SettingsDrawer({
               <div className="flex items-center justify-between">
                 <span className="flex items-center gap-1 text-[10.5px] font-extrabold text-[#0E0E13]">
                   <Clock className="w-3 h-3" />
-                  <span>Giữ nóng VRAM (Keep-Alive)</span>
+                  <span>{t.keepAliveTitle}</span>
                 </span>
                 <span className="text-[9.5px] font-bold text-zinc-600">
                   {KEEP_ALIVE_OPTIONS.find((o) => o.id === keepAliveSetting)?.hint}
@@ -705,33 +729,31 @@ export function SettingsDrawer({
               </div>
             </div>
 
-            {/* OmniParser V2 Vision Click Toggle + Chú thích tác dụng */}
+            {/* OmniParser V2 Vision Click Toggle */}
             <div className="p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Eye className="w-3.5 h-3.5 shrink-0 text-[#0E0E13]" />
                   <span className="font-extrabold text-[11px] text-[#0E0E13] truncate">
-                    OmniParser V2 (Nhận diện nút ảnh)
+                    {t.omniparserTitle}
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleToggleOmniParser}
-                  title="Bật/tắt OmniParser V2 để khoanh khung & đánh số nút/icon khi bấm UI bằng ảnh"
                   className={`h-7 px-3 rounded-lg text-[10.5px] font-black border-2 border-[#0E0E13] shrink-0 cursor-pointer ${
                     omniparserOn ? "bg-[#0E0E13] text-white" : "bg-zinc-100 text-zinc-600"
                   }`}
                 >
-                  {omniparserOn ? "BẬT" : "TẮT"}
+                  {omniparserOn ? t.on : t.off}
                 </button>
               </div>
               <div className="text-[10px] leading-snug text-zinc-600 bg-zinc-50 border border-[#0E0E13]/20 rounded-lg px-2 py-1.5">
-                <span className="font-bold text-[#0E0E13]">Tác dụng: </span>
-                Tự khoanh khung & đánh số icon/nút không chữ trên màn hình giúp Vision bấm chuẩn xác hơn thay cho lưới 10×10. Chỉ nạp lazy (~1.6 GB VRAM) lúc cần bấm ảnh và tự xả Whisper trước để tránh tràn 8 GB.
+                {t.omniparserDesc}
               </div>
               <div className="flex items-center justify-between text-[9.5px] font-bold text-zinc-600 px-0.5">
                 <span>
-                  Trạng thái:{" "}
+                  {t.statusLabel}{" "}
                   {omniparserLoaded
                     ? "Đang giữ trong VRAM"
                     : omniparserAvail
@@ -747,12 +769,37 @@ export function SettingsDrawer({
 
         {activeTab === "general" && (
           <>
+            {/* Display Language Selector (Tiếng Việt / English) */}
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <Languages className="w-3.5 h-3.5 text-[#0E0E13] shrink-0" />
+                <span className="font-extrabold text-[11px] text-[#0E0E13] truncate">{t.uiLanguageLabel}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1 shrink-0">
+                {[
+                  { id: "vi", label: "Tiếng Việt" },
+                  { id: "en", label: "English" },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => onChangeUiLanguage?.(opt.id)}
+                    className={`h-7 px-2.5 rounded-lg text-[10.5px] font-black border-2 border-[#0E0E13] cursor-pointer ${
+                      uiLang === opt.id ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Multi-Monitor Position */}
             <div className="space-y-1.5 p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex items-center gap-1.5 text-[11px] font-extrabold text-[#0E0E13]">
                   <Monitor className="w-3.5 h-3.5" />
-                  <span>Màn hình hiển thị (Top-Center)</span>
+                  <span>{t.displayTitle}</span>
                 </span>
                 {onRecenter && (
                   <button
@@ -760,19 +807,19 @@ export function SettingsDrawer({
                     onClick={onRecenter}
                     className="px-2 py-0.5 rounded bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border border-[#0E0E13] text-[10px] font-black text-[#0E0E13] cursor-pointer"
                   >
-                    Căn giữa lại
+                    {t.recenterBtn}
                   </button>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
-                  { id: "cursor", label: "Theo chuột (Auto)" },
-                  { id: "primary", label: "Màn chính (Primary)" },
+                  { id: "cursor", label: t.displayAutoCursor },
+                  { id: "primary", label: t.displayPrimary },
                   ...((hubState.displays || []).length > 1
                     ? (hubState.displays || []).map((d) => ({
                         id: `display:${d.id}`,
-                        label: `Màn ${d.index} · ${d.aspectRatio || `${d.width}×${d.height}`}`,
-                        title: d.label || `Màn ${d.index} (${d.width}×${d.height})`,
+                        label: `${uiLang === "en" ? "Display" : "Màn"} ${d.index} · ${d.aspectRatio || `${d.width}×${d.height}`}`,
+                        title: d.label || `Display ${d.index} (${d.width}×${d.height})`,
                       }))
                     : []),
                 ].map((opt) => {
@@ -809,8 +856,8 @@ export function SettingsDrawer({
                 <div className="flex items-center gap-2 min-w-0">
                   <Sparkles className="w-4 h-4 shrink-0 text-[#0E0E13]" />
                   <div className="min-w-0">
-                    <div className="font-black text-[#0E0E13] text-[11px]">Hiệu ứng Sakuga VFX (12fps)</div>
-                    <div className="text-[10px] text-zinc-600 truncate">0% GPU khi Idle hoặc khi ẩn khay</div>
+                    <div className="font-black text-[#0E0E13] text-[11px]">{t.sakugaVfxTitle}</div>
+                    <div className="text-[10px] text-zinc-600 truncate">{t.sakugaVfxSub}</div>
                   </div>
                 </div>
                 <button
@@ -820,7 +867,7 @@ export function SettingsDrawer({
                     sakugaOn ? "bg-[#0E0E13] text-white" : "bg-white text-zinc-500"
                   }`}
                 >
-                  {sakugaOn ? "BẬT" : "TẮT"}
+                  {sakugaOn ? t.on : t.off}
                 </button>
               </div>
               {onPreviewVfx && (
@@ -854,9 +901,9 @@ export function SettingsDrawer({
               <div className="flex items-center gap-2 min-w-0">
                 <Gamepad2 className="w-4 h-4 text-[#0E0E13] shrink-0" />
                 <div className="min-w-0">
-                  <div className="font-extrabold text-[11px] text-[#0E0E13]">Tự quét Game & xả VRAM</div>
+                  <div className="font-extrabold text-[11px] text-[#0E0E13]">{t.gamingGuardTitle}</div>
                   <div className="text-[10px] text-zinc-600 truncate">
-                    {gamingGuardOn ? "Tự xả khi mở CS2, FC25, Forza..." : "Đang TẮT · Giữ nguyên VRAM"}
+                    {gamingGuardOn ? t.gamingGuardOn : t.gamingGuardOff}
                   </div>
                 </div>
               </div>
@@ -867,7 +914,7 @@ export function SettingsDrawer({
                   gamingGuardOn ? "bg-[#0E0E13] text-white" : "bg-zinc-100 text-zinc-600"
                 }`}
               >
-                {gamingGuardOn ? "BẬT" : "TẮT"}
+                {gamingGuardOn ? t.on : t.off}
               </button>
             </div>
 
@@ -879,7 +926,7 @@ export function SettingsDrawer({
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white hover:bg-zinc-100 border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
-                <span>Thư mục Exports</span>
+                <span>{t.exportsBtn}</span>
               </button>
               <button
                 type="button"
@@ -887,7 +934,7 @@ export function SettingsDrawer({
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[11px] font-bold text-[#0E0E13] cursor-pointer"
               >
                 <EyeOff className="w-3.5 h-3.5" />
-                <span>Ẩn xuống Tray</span>
+                <span>{t.hideTrayBtn}</span>
               </button>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
@@ -897,14 +944,14 @@ export function SettingsDrawer({
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-zinc-50 hover:bg-[#0E0E13] hover:text-white border-2 border-[#0E0E13] text-[10.5px] font-bold text-[#0E0E13] cursor-pointer"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Mở Setup Wizard</span>
+                <span>{t.reopenSetupBtn}</span>
               </button>
               <button
                 type="button"
                 onClick={() => window.jarvisApi?.quitApp?.()}
                 className="h-8 flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 hover:bg-rose-600 hover:text-white border-2 border-[#0E0E13] text-[10.5px] font-black text-rose-700 cursor-pointer"
               >
-                <span>Thoát hẳn App</span>
+                <span>{t.quitAppBtn}</span>
               </button>
             </div>
           </>
@@ -914,7 +961,7 @@ export function SettingsDrawer({
           <>
             <div className="space-y-1.5">
               <div className="text-[10.5px] font-black uppercase tracking-wider text-zinc-600">
-                Kết nối MCP & Local Engine
+                {t.mcpConnTitle}
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
@@ -948,9 +995,9 @@ export function SettingsDrawer({
 
             <div className="flex items-center justify-between p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
               <div>
-                <div className="font-extrabold text-[#0E0E13]">Chế độ bảo vệ MCP</div>
+                <div className="font-extrabold text-[#0E0E13]">{t.mcpProtectTitle}</div>
                 <div className="text-[10.5px] font-medium text-zinc-600">
-                  {isSafe ? "Safe: Hỏi xác nhận khi xóa/đóng ép" : "Turbo: Thực thi tự động tức thì"}
+                  {isSafe ? t.mcpSafeDesc : t.mcpTurboDesc}
                 </div>
               </div>
               <button
@@ -970,7 +1017,7 @@ export function SettingsDrawer({
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Globe className="w-3.5 h-3.5 shrink-0 text-[#0E0E13]" />
                   <span className="font-extrabold text-[11px] text-[#0E0E13] truncate">
-                    Browser-Use (Web thật)
+                    {t.browserUseTitle}
                   </span>
                 </div>
                 <button
@@ -980,26 +1027,25 @@ export function SettingsDrawer({
                     browserUseOn ? "bg-[#0E0E13] text-white" : "bg-zinc-100 text-zinc-600"
                   }`}
                 >
-                  {browserUseOn ? "BẬT" : "TẮT"}
+                  {browserUseOn ? t.on : t.off}
                 </button>
               </div>
               <div className="text-[10px] text-zinc-600 leading-snug">
-                <span className="font-bold text-[#0E0E13]">Tác dụng: </span>
-                Tự động hóa thao tác web dài trên trình duyệt đã đăng nhập (tự chặn trang ngân hàng/ví).{" "}
-                {browserUseAvail ? "Đã sẵn sàng." : "Chưa cài gói 'browser-use' (tự fallback Edge/Playwright)."}
+                {t.browserUseDesc}{" "}
+                {browserUseAvail ? "Ready." : ""}
               </div>
             </div>
 
             <div className="space-y-1.5 p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <div className="font-extrabold text-[#0E0E13]">Cloud Gemini API (Tầng 3 cuối)</div>
+                  <div className="font-extrabold text-[#0E0E13]">{t.cloudGeminiTitle}</div>
                   <div className="text-[10.5px] font-medium text-zinc-600">
                     {apiFallbackOn
                       ? apiKeyReady
-                        ? `Đang BẬT · ${backendStatus?.api_key_count || 1} key · ${backendStatus?.api_model || "gemini-2.5-flash"}`
-                        : "Đã BẬT · Chưa có GEMINI_API_KEY"
-                      : "Đang TẮT · Chỉ chạy Local AI"}
+                        ? `${t.on} · ${backendStatus?.api_key_count || 1} key · ${backendStatus?.api_model || "gemini-2.5-flash"}`
+                        : t.cloudOnNoKey
+                      : t.cloudOffDesc}
                   </div>
                   {backendStatus?.last_api_error && (
                     <div className="text-[9.5px] font-bold text-rose-600 mt-0.5 truncate" title={backendStatus.last_api_error}>
@@ -1022,7 +1068,7 @@ export function SettingsDrawer({
                       apiFallbackOn ? "bg-[#00B4D8] text-[#0E0E13]" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
                     }`}
                   >
-                    {apiFallbackOn ? "Bật" : "Tắt"}
+                    {apiFallbackOn ? t.on : t.off}
                   </button>
                 </div>
               </div>
@@ -1032,7 +1078,7 @@ export function SettingsDrawer({
                     type="password"
                     value={cloudKeyInput}
                     onChange={(e) => setCloudKeyInput(e.target.value)}
-                    placeholder={apiKeyReady ? "Nhập 1 hoặc nhiều key (cách bởi dấu phẩy)..." : "Dán 1 hoặc nhiều GEMINI_API_KEY (cách dấu ,)..."}
+                    placeholder={apiKeyReady ? "Key 1, Key 2..." : "GEMINI_API_KEY (key1,key2...)"}
                     className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-zinc-50 border-2 border-[#0E0E13] text-[11px] font-medium text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none"
                   />
                   <button
@@ -1040,7 +1086,7 @@ export function SettingsDrawer({
                     onClick={handleSaveCloudKey}
                     className="px-3 py-1.5 rounded-lg bg-[#0E0E13] hover:bg-zinc-800 text-white text-[11px] font-black cursor-pointer"
                   >
-                    Lưu
+                    {t.saveBtn}
                   </button>
                 </div>
               )}
@@ -1052,8 +1098,8 @@ export function SettingsDrawer({
           <>
             <div className="flex items-center justify-between p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
               <div>
-                <div className="font-extrabold text-[11px] text-[#0E0E13]">Phím tắt kích hoạt</div>
-                <div className="text-[10px] font-medium text-zinc-600">Nhấn nháy để gõ · Giữ để nói</div>
+                <div className="font-extrabold text-[11px] text-[#0E0E13]">{t.hotkeyTitle}</div>
+                <div className="text-[10px] font-medium text-zinc-600">{t.hotkeySub}</div>
               </div>
               <select
                 value={hubState.hotkey || "ctrl+alt+space"}
@@ -1070,7 +1116,7 @@ export function SettingsDrawer({
               <div className="flex items-center justify-between p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <Radio className="w-3.5 h-3.5 shrink-0 text-[#0E0E13]" />
-                  <span className="font-extrabold text-[10.5px] truncate">Gọi '{hubState.wakeName || "Luna"}'</span>
+                  <span className="font-extrabold text-[10.5px] truncate">Wake '{hubState.wakeName || "Luna"}'</span>
                 </div>
                 <button
                   type="button"
@@ -1079,14 +1125,14 @@ export function SettingsDrawer({
                     wakeOn ? "bg-[#0E0E13] text-white" : "bg-zinc-100 text-zinc-600"
                   }`}
                 >
-                  {wakeOn ? "BẬT" : "TẮT"}
+                  {wakeOn ? t.on : t.off}
                 </button>
               </div>
 
               <div className="flex items-center justify-between p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow">
                 <div className="flex items-center gap-1.5 min-w-0">
                   {voiceOn ? <Volume2 className="w-3.5 h-3.5 shrink-0" /> : <VolumeX className="w-3.5 h-3.5 shrink-0 text-zinc-500" />}
-                  <span className="font-extrabold text-[10.5px] truncate">Đọc TTS</span>
+                  <span className="font-extrabold text-[10.5px] truncate">{t.readTtsLabel}</span>
                 </div>
                 <button
                   type="button"
@@ -1095,7 +1141,7 @@ export function SettingsDrawer({
                     voiceOn ? "bg-[#0E0E13] text-white" : "bg-zinc-100 text-zinc-700"
                   }`}
                 >
-                  {voiceOn ? "BẬT" : "TẮT"}
+                  {voiceOn ? t.on : t.off}
                 </button>
               </div>
             </div>
@@ -1103,7 +1149,7 @@ export function SettingsDrawer({
             {/* Wake Name Selector + Custom Name */}
             <div className="p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[10.5px] font-extrabold text-[#0E0E13]">Tên gọi trợ lý (Wake Word)</span>
+                <span className="text-[10.5px] font-extrabold text-[#0E0E13]">{t.wakeNameTitle}</span>
                 <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded bg-zinc-100 border border-[#0E0E13]/30 text-[#0E0E13]">
                   OK {hubState.wakeName || "Luna"}
                 </span>
@@ -1140,23 +1186,23 @@ export function SettingsDrawer({
                   type="text"
                   value={wakeNameInput}
                   onChange={(e) => setWakeNameInput(e.target.value)}
-                  placeholder="Tự đặt tên tiếng Anh dễ đọc (vd: Kaito)..."
+                  placeholder="Custom English name (e.g. Kaito)..."
                   className="flex-1 min-w-0 px-2.5 py-1 rounded-lg bg-zinc-50 border-2 border-[#0E0E13] text-[10.5px] font-medium text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none"
                 />
                 <button
                   type="submit"
                   className="px-2.5 py-1 rounded-lg bg-[#0E0E13] hover:bg-zinc-800 text-white text-[10.5px] font-black cursor-pointer"
                 >
-                  Đặt tên
+                  {t.setNameBtn}
                 </button>
               </form>
               <div className="flex items-center justify-between pt-0.5">
-                <span className="text-[10px] font-bold text-zinc-700">Độ nhạy nhận giọng:</span>
+                <span className="text-[10px] font-bold text-zinc-700">{t.sensitivityLabel}</span>
                 <div className="flex gap-1">
                   {[
-                    { id: "high", label: "Nhạy" },
-                    { id: "balanced", label: "Cân bằng" },
-                    { id: "strict", label: "Chặt" },
+                    { id: "high", label: uiLang === "en" ? "High" : "Nhạy" },
+                    { id: "balanced", label: uiLang === "en" ? "Balanced" : "Cân bằng" },
+                    { id: "strict", label: uiLang === "en" ? "Strict" : "Chặt" },
                   ].map((opt) => {
                     const active = (hubState.wakeSensitivity || "balanced") === opt.id;
                     return (
@@ -1175,19 +1221,21 @@ export function SettingsDrawer({
                 </div>
               </div>
               <div className="text-[9.5px] font-medium text-zinc-600">
-                Nói &quot;OK {hubState.wakeName || "Luna"}&quot; hoặc &quot;Hey {hubState.wakeName || "Luna"}&quot; để gọi · &quot;{hubState.wakeName || "Luna"} sleep now&quot; để ẩn.
+                {uiLang === "en"
+                  ? `Say "OK ${hubState.wakeName || "Luna"}" or "Hey ${hubState.wakeName || "Luna"}" to wake · "${hubState.wakeName || "Luna"} sleep now" to hide.`
+                  : `Nói "OK ${hubState.wakeName || "Luna"}" hoặc "Hey ${hubState.wakeName || "Luna"}" để gọi · "${hubState.wakeName || "Luna"} sleep now" để ẩn.`}
               </div>
             </div>
 
             {/* Custom Voice Dictionary */}
             <div className="p-2 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-2">
-              <div className="text-[10.5px] font-extrabold text-[#0E0E13]">Từ điển nhận diện giọng nói (Whisper)</div>
+              <div className="text-[10.5px] font-extrabold text-[#0E0E13]">{t.whisperDictTitle}</div>
               <form onSubmit={handleAddDict} className="flex gap-1.5">
                 <input
                   type="text"
                   value={dictInput}
                   onChange={(e) => setDictInput(e.target.value)}
-                  placeholder="Thêm tên app / từ khóa riêng..."
+                  placeholder={t.addDictPlaceholder}
                   className="flex-1 min-w-0 px-2.5 py-1 rounded-lg bg-zinc-50 border-2 border-[#0E0E13] text-[10.5px] font-medium text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none"
                 />
                 <button
@@ -1195,7 +1243,7 @@ export function SettingsDrawer({
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0E0E13] hover:bg-zinc-800 text-white text-[10.5px] font-black cursor-pointer"
                 >
                   <Plus className="w-3 h-3" />
-                  Thêm
+                  {t.addBtn}
                 </button>
               </form>
 

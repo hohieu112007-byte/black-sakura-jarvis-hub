@@ -635,21 +635,29 @@ function isCursorInsideInteractiveHub() {
     const b = mainWindow.getBounds();
     const rx = cursor.x - b.x;
     const ry = cursor.y - b.y;
-    if (rx < -8 || ry < -8 || rx > b.width + 8 || ry > b.height + 8) {
+    if (rx < -12 || ry < -12 || rx > b.width + 12 || ry > b.height + 12) {
       return false;
     }
+    let zoom = 1.0;
+    try {
+      zoom = Number(mainWindow.webContents.getZoomFactor() || 1.0) || 1.0;
+    } catch {}
     const rects = activityState.interactiveRects;
     if (!Array.isArray(rects) || rects.length === 0) {
       return rx >= 0 && ry >= 0 && rx <= b.width && ry <= b.height;
     }
     for (const r of rects) {
+      const left = r.left * zoom;
+      const right = r.right * zoom;
+      const top = r.top * zoom;
+      const bottom = r.bottom * zoom;
       if (
         r.width > 0 &&
         r.height > 0 &&
-        rx >= r.left - 10 &&
-        rx <= r.right + 10 &&
-        ry >= r.top - 10 &&
-        ry <= r.bottom + 10
+        rx >= left - 18 &&
+        rx <= right + 18 &&
+        ry >= top - 18 &&
+        ry <= bottom + 18
       ) {
         return true;
       }
@@ -829,6 +837,7 @@ function getPublicState() {
     sakugaEnabled: hubState.sakugaEnabled !== false,
     displayMode: hubState.displayMode || "cursor",
     displays: getAvailableDisplaysInfo(),
+    uiLanguage: hubState.uiLanguage === "en" ? "en" : "vi",
     customDictionary: hubState.customDictionary || [],
     installedApps: Array.isArray(agent?.installedApps) ? agent.installedApps.slice(0, 45) : [],
     health: mcpHub ? mcpHub.getHealth() : { fastDesktop: false, playwright: false, filesystem: false },
@@ -1067,8 +1076,35 @@ function updateTrayMenu() {
       },
     },
     {
-      label: "Màn hình hiển thị",
+      label: "Màn hình hiển thị / Display",
       submenu: displaySubmenu,
+    },
+    {
+      label: `🌐 Ngôn ngữ / Language (${hubState.uiLanguage === "en" ? "EN" : "VI"})`,
+      submenu: [
+        {
+          label: "Tiếng Việt (VI)",
+          type: "radio",
+          checked: hubState.uiLanguage !== "en",
+          click: () => {
+            hubState.uiLanguage = "vi";
+            saveHubState(hubState);
+            updateTrayMenu();
+            emitHud({ type: "state_sync", ...getPublicState() });
+          },
+        },
+        {
+          label: "English (EN)",
+          type: "radio",
+          checked: hubState.uiLanguage === "en",
+          click: () => {
+            hubState.uiLanguage = "en";
+            saveHubState(hubState);
+            updateTrayMenu();
+            emitHud({ type: "state_sync", ...getPublicState() });
+          },
+        },
+      ],
     },
     {
       label: "⚙️ Thiết lập ban đầu (Setup Wizard)",
@@ -1387,6 +1423,7 @@ function registerIpc() {
           : ollamaDirect.models,
       backendStatus: backendStatus && backendStatus.ok ? backendStatus : null,
       onboardingCompleted: hubState.onboardingCompleted === true,
+      uiLanguage: hubState.uiLanguage === "en" ? "en" : "vi",
     };
   });
 
@@ -1622,6 +1659,9 @@ function registerIpc() {
         : "cursor";
     hubState.displayMode = validDisplay;
     hubState.onboardingCompleted = true;
+    if (payload.uiLanguage === "en" || payload.uiLanguage === "vi") {
+      hubState.uiLanguage = payload.uiLanguage;
+    }
 
     const chosenSafety = payload.safetyMode === "turbo" ? "turbo" : "safe";
     try {
@@ -2025,6 +2065,15 @@ function registerIpc() {
       clean === "cursor" || clean === "primary" || /^display:\d+$/.test(clean) ? clean : "cursor";
     switchDisplayMode(valid);
     return hubState.displayMode;
+  });
+
+  ipcMain.handle("hub:set-ui-language", (_evt, lang) => {
+    const clean = String(lang || "").trim().toLowerCase() === "en" ? "en" : "vi";
+    hubState.uiLanguage = clean;
+    saveHubState(hubState);
+    updateTrayMenu();
+    emitHud({ type: "state_sync", ...getPublicState() });
+    return hubState.uiLanguage;
   });
 
   ipcMain.on("hub:recenter", () => {

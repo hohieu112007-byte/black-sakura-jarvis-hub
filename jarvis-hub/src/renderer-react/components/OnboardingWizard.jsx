@@ -26,6 +26,7 @@ const RECOMMENDED_MODELS = [
 
 export function OnboardingWizard() {
   const [step, setStep] = useState(1);
+  const [lang, setLang] = useState("vi");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [safetyMode, setSafetyMode] = useState("safe");
   const [displayMode, setDisplayMode] = useState("cursor");
@@ -54,6 +55,7 @@ export function OnboardingWizard() {
       const res = await window.jarvisApi?.getSetupDiagnostics?.();
       if (res?.ok) {
         setDiag(res);
+        if (res.uiLanguage === "en" || res.uiLanguage === "vi") setLang(res.uiLanguage);
         if (res.displayMode) setDisplayMode(res.displayMode);
         if (res.safetyMode === "turbo" || res.safetyMode === "safe") {
           setSafetyMode(res.safetyMode);
@@ -166,6 +168,7 @@ export function OnboardingWizard() {
     setFinishing(true);
     try {
       await window.jarvisApi?.completeOnboarding?.({
+        uiLanguage: lang,
         displayMode,
         safetyMode,
         selectedModel,
@@ -202,16 +205,35 @@ export function OnboardingWizard() {
               BLACK SAKURA // JARVIS-HUB
             </div>
             <div className="text-[11px] text-zinc-300 truncate">
-              Thiết lập 1 lần duy nhất · Hoàn tất &amp; chấp nhận để mở Mini HUD
+              {lang === "en"
+                ? "Windows AI Desktop Assistant · One-time setup before launching Mini HUD"
+                : "Trợ lý AI điều khiển Windows · Thiết lập 1 lần duy nhất trước khi mở Mini HUD"}
             </div>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-black shrink-0">
+          <div className="flex items-center rounded-lg border border-zinc-700 overflow-hidden mr-1">
+            {["vi", "en"].map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => {
+                  setLang(code);
+                  window.jarvisApi?.setUiLanguage?.(code);
+                }}
+                className={`px-2 py-1 text-[10px] font-black uppercase cursor-pointer ${
+                  lang === code ? "bg-white text-[#0E0E13]" : "bg-zinc-900 text-zinc-400 hover:text-white"
+                }`}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
           <span className={`px-2.5 py-1 rounded-lg ${step === 1 ? "bg-[#F43F5E] text-white" : "bg-zinc-800 text-zinc-400"}`}>
-            1. Quyền &amp; An toàn
+            {lang === "en" ? "1. Permissions" : "1. Quyền & An toàn"}
           </span>
           <span className={`px-2.5 py-1 rounded-lg ${step === 2 ? "bg-[#F43F5E] text-white" : "bg-zinc-800 text-zinc-400"}`}>
-            2. Màn hình &amp; Ollama
+            {lang === "en" ? "2. Display & AI" : "2. Màn hình & Ollama"}
           </span>
         </div>
       </div>
@@ -223,28 +245,74 @@ export function OnboardingWizard() {
             <div className="p-4 rounded-2xl bg-white border-2 border-[#0E0E13] shadow-[3px_3px_0_#0E0E13] space-y-2.5">
               <div className="flex items-center gap-2 text-sm font-black">
                 <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>Cảnh báo bảo mật &amp; Quyền truy cập hệ thống</span>
+                <span>
+                  {lang === "en"
+                    ? "Security Notice & System Permissions"
+                    : "Cảnh báo bảo mật & Quyền truy cập hệ thống"}
+                </span>
               </div>
               <p className="text-xs text-zinc-700 leading-relaxed">
-                Cửa sổ này <b>chỉ hiển thị 1 lần đầu tiên</b> sau khi tải về. Để điều khiển Windows, trình duyệt và nghe giọng nói cục bộ, <b>Black Sakura Jarvis-Hub</b> cần các quyền sau:
+                {lang === "en" ? (
+                  <>
+                    This setup wizard appears <b>only once on first launch</b>. To automate Windows apps, browser tabs, and local voice commands, <b>Black Sakura Jarvis-Hub</b> requests:
+                  </>
+                ) : (
+                  <>
+                    Cửa sổ này <b>chỉ hiển thị 1 lần đầu tiên</b> sau khi tải về. Để điều khiển Windows, trình duyệt và nghe giọng nói cục bộ, <b>Black Sakura Jarvis-Hub</b> cần các quyền sau:
+                  </>
+                )}
               </p>
               <div className="grid grid-cols-1 gap-2 text-xs">
                 <div className="p-2.5 rounded-xl bg-zinc-50 border border-[#0E0E13]/25">
-                  <div className="font-black text-[#0E0E13]">1. Điều khiển Desktop (Win32 / UI Automation)</div>
+                  <div className="font-black text-[#0E0E13]">
+                    {lang === "en"
+                      ? "1. Desktop Control (Win32 / UI Automation)"
+                      : "1. Điều khiển Desktop (Win32 / UI Automation)"}
+                  </div>
                   <div className="text-zinc-600 mt-0.5">
-                    Mở/đóng ứng dụng, đóng tab trình duyệt, chuyển màn hình, gửi phím tắt. Hệ thống <b>tự động chặn</b> tác động lên Task Manager, Registry, PowerShell, trình quản lý mật khẩu và trang ngân hàng/ví tiền ảo.
+                    {lang === "en" ? (
+                      <>
+                        Opens/closes apps &amp; browser tabs, moves windows across displays, and sends hotkeys. <b>Automatically blocks</b> Task Manager, Registry Editor, PowerShell, password managers, and banking/crypto pages.
+                      </>
+                    ) : (
+                      <>
+                        Mở/đóng ứng dụng, đóng tab trình duyệt, chuyển màn hình, gửi phím tắt. Hệ thống <b>tự động chặn</b> tác động lên Task Manager, Registry, PowerShell, trình quản lý mật khẩu và trang ngân hàng/ví tiền ảo.
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="p-2.5 rounded-xl bg-zinc-50 border border-[#0E0E13]/25">
-                  <div className="font-black text-[#0E0E13]">2. Micro, Backend cục bộ &amp; Chống xung đột app AI khác</div>
+                  <div className="font-black text-[#0E0E13]">
+                    {lang === "en"
+                      ? "2. Microphone, Local Backend & AI Coexistence Guard"
+                      : "2. Micro, Backend cục bộ & Chống xung đột app AI khác"}
+                  </div>
                   <div className="text-zinc-600 mt-0.5">
-                    Chỉ lắng nghe nội bộ <code>127.0.0.1</code> kèm mã phiên <code>X-Jarvis-Token</code> chống website lạ. Nếu cổng <code>8765</code> đang có app AI khác dùng, Hub sẽ <b>tự chuyển sang cổng trống</b> và bảo vệ VRAM khi dùng chung GPU.
+                    {lang === "en" ? (
+                      <>
+                        Binds strictly to <code>127.0.0.1</code> with per-session <code>X-Jarvis-Token</code>. Auto-picks a free port if <code>8765</code> is used by another AI app and protects shared GPU VRAM.
+                      </>
+                    ) : (
+                      <>
+                        Chỉ lắng nghe nội bộ <code>127.0.0.1</code> kèm mã phiên <code>X-Jarvis-Token</code> chống website lạ. Nếu cổng <code>8765</code> đang có app AI khác dùng, Hub sẽ <b>tự chuyển sang cổng trống</b> và bảo vệ VRAM khi dùng chung GPU.
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="p-2.5 rounded-xl bg-zinc-50 border border-[#0E0E13]/25">
-                  <div className="font-black text-[#0E0E13]">3. Bảo vệ file nhạy cảm</div>
+                  <div className="font-black text-[#0E0E13]">
+                    {lang === "en" ? "3. Sensitive File Protection" : "3. Bảo vệ file nhạy cảm"}
+                  </div>
                   <div className="text-zinc-600 mt-0.5">
-                    Tự động chặn đọc file <code>.env</code>, khóa <code>.ssh</code>/<code>.pem</code> và dữ liệu đăng nhập trình duyệt.
+                    {lang === "en" ? (
+                      <>
+                        Blocks reading <code>.env</code>, private keys (<code>.ssh</code>, <code>.pem</code>), and browser login profile directories.
+                      </>
+                    ) : (
+                      <>
+                        Tự động chặn đọc file <code>.env</code>, khóa <code>.ssh</code>/<code>.pem</code> và dữ liệu đăng nhập trình duyệt.
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -253,7 +321,7 @@ export function OnboardingWizard() {
             {/* Safety Mode Selection */}
             <div className="p-4 rounded-2xl bg-white border-2 border-[#0E0E13] shadow-[3px_3px_0_#0E0E13] space-y-2">
               <div className="text-xs font-black uppercase tracking-wider text-zinc-600">
-                Chọn chế độ thực thi mặc định
+                {lang === "en" ? "Default Execution Safety Mode" : "Chọn chế độ thực thi mặc định"}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -267,10 +335,12 @@ export function OnboardingWizard() {
                 >
                   <div className="flex items-center gap-1.5 font-black text-xs">
                     <Shield className="w-4 h-4 shrink-0" />
-                    <span>Safe Mode (Khuyên dùng)</span>
+                    <span>{lang === "en" ? "Safe Mode (Recommended)" : "Safe Mode (Khuyên dùng)"}</span>
                   </div>
                   <div className={`text-[11px] mt-1 ${safetyMode === "safe" ? "text-zinc-300" : "text-zinc-600"}`}>
-                    Hỏi xác nhận trước thao tác quan trọng (đóng app, gửi phím, click sâu).
+                    {lang === "en"
+                      ? "Prompts for approval before closing apps, sending hotkeys, or clicking UI."
+                      : "Hỏi xác nhận trước thao tác quan trọng (đóng app, gửi phím, click sâu)."}
                   </div>
                 </button>
                 <button
@@ -284,10 +354,12 @@ export function OnboardingWizard() {
                 >
                   <div className="flex items-center gap-1.5 font-black text-xs">
                     <Zap className="w-4 h-4 shrink-0 text-amber-400" />
-                    <span>Turbo Mode (Tự động)</span>
+                    <span>{lang === "en" ? "Turbo Mode (Instant)" : "Turbo Mode (Tự động)"}</span>
                   </div>
                   <div className={`text-[11px] mt-1 ${safetyMode === "turbo" ? "text-zinc-300" : "text-zinc-600"}`}>
-                    Thực thi ngay lập tức không hỏi lại (vẫn giữ bộ lọc bảo mật hệ thống).
+                    {lang === "en"
+                      ? "Executes immediately without confirmation prompts (security blocks remain active)."
+                      : "Thực thi ngay lập tức không hỏi lại (vẫn giữ bộ lọc bảo mật hệ thống)."}
                   </div>
                 </button>
               </div>
@@ -301,7 +373,9 @@ export function OnboardingWizard() {
                 className="mt-0.5 w-4 h-4 accent-[#0E0E13] cursor-pointer shrink-0"
               />
               <span className="text-xs font-bold text-[#0E0E13] leading-snug">
-                Tôi đã đọc cảnh báo bảo mật và đồng ý cấp quyền điều khiển desktop cục bộ cho Black Sakura Jarvis-Hub.
+                {lang === "en"
+                  ? "I have read the security notice and grant local desktop automation permissions to Black Sakura Jarvis-Hub."
+                  : "Tôi đã đọc cảnh báo bảo mật và đồng ý cấp quyền điều khiển desktop cục bộ cho Black Sakura Jarvis-Hub."}
               </span>
             </label>
           </>
@@ -309,7 +383,7 @@ export function OnboardingWizard() {
           <>
             <div className="flex items-center justify-between">
               <div className="text-xs font-black uppercase tracking-wider text-zinc-600">
-                Tự nhận diện phần cứng &amp; Cài đặt AI
+                {lang === "en" ? "Hardware Detection & AI Setup" : "Tự nhận diện phần cứng & Cài đặt AI"}
               </div>
               <button
                 type="button"
@@ -318,7 +392,7 @@ export function OnboardingWizard() {
                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border-2 border-[#0E0E13] text-[11px] font-black cursor-pointer hover:bg-zinc-100 disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingDiag ? "animate-spin" : ""}`} />
-                <span>Quét lại</span>
+                <span>{lang === "en" ? "Rescan" : "Quét lại"}</span>
               </button>
             </div>
 
@@ -327,16 +401,20 @@ export function OnboardingWizard() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 font-black text-xs">
                   <Monitor className="w-4 h-4 shrink-0" />
-                  <span>Màn hình hiển thị (Tự co giãn mọi tỷ lệ &amp; DPI)</span>
+                  <span>
+                    {lang === "en"
+                      ? "Displays (Auto Aspect-Ratio & DPI Scaling)"
+                      : "Màn hình hiển thị (Tự co giãn mọi tỷ lệ & DPI)"}
+                  </span>
                 </div>
                 <span className="text-[10.5px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-400">
-                  {displays.length || 1} màn hình
+                  {displays.length || 1} {lang === "en" ? "display(s)" : "màn hình"}
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {[
-                  { id: "cursor", label: "Theo con trỏ chuột (Khuyên dùng)" },
-                  { id: "primary", label: "Luôn ở màn hình chính" },
+                  { id: "cursor", label: lang === "en" ? "Follow Cursor (Recommended)" : "Theo con trỏ chuột (Khuyên dùng)" },
+                  { id: "primary", label: lang === "en" ? "Primary Display Only" : "Luôn ở màn hình chính" },
                   ...displays.map((d) => ({ id: `display:${d.id}`, label: d.label })),
                 ].map((opt) => (
                   <button
@@ -358,7 +436,7 @@ export function OnboardingWizard() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 font-black text-xs">
                   <Cpu className="w-4 h-4 shrink-0" />
-                  <span>Ollama Local AI &amp; Model (Tầng 2)</span>
+                  <span>{lang === "en" ? "Ollama Local AI & Models (Tier 2)" : "Ollama Local AI & Model (Tầng 2)"}</span>
                 </div>
                 <span
                   className={`text-[10.5px] font-black px-2 py-0.5 rounded border ${
@@ -367,29 +445,35 @@ export function OnboardingWizard() {
                       : "bg-amber-100 text-amber-900 border-amber-400"
                   }`}
                 >
-                  {backend ? `Backend OK (:${diag?.activeBackendPort || 8765})` : "Backend đang khởi động..."}
+                  {backend
+                    ? `Backend OK (:${diag?.activeBackendPort || 8765})`
+                    : lang === "en"
+                      ? "Starting Backend..."
+                      : "Backend đang khởi động..."}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[11px]">
                 <div className="p-2 rounded-xl bg-zinc-50 border border-[#0E0E13]/20">
-                  <div className="text-zinc-500 font-bold">GPU / Đồ họa</div>
+                  <div className="text-zinc-500 font-bold">{lang === "en" ? "GPU / Graphics" : "GPU / Đồ họa"}</div>
                   <div className="font-black text-[#0E0E13] truncate mt-0.5">
                     {gpuName} {gpuVram > 0 ? `(${gpuVram} GB VRAM)` : ""}
                   </div>
                 </div>
                 <div className="p-2 rounded-xl bg-zinc-50 border border-[#0E0E13]/20">
-                  <div className="text-zinc-500 font-bold">Ollama trên máy</div>
+                  <div className="text-zinc-500 font-bold">{lang === "en" ? "Local Ollama Status" : "Ollama trên máy"}</div>
                   <div className="font-black text-[#0E0E13] mt-0.5 flex items-center gap-1">
                     {ollamaOnline ? (
                       <>
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span>Đang chạy ({installedModels.length} model)</span>
+                        <span>
+                          {lang === "en" ? `Running (${installedModels.length} models)` : `Đang chạy (${installedModels.length} model)`}
+                        </span>
                       </>
                     ) : ollamaInstalled ? (
-                      <span>Đã cài · Bấm khởi động lại</span>
+                      <span>{lang === "en" ? "Installed · Not running" : "Đã cài · Bấm khởi động lại"}</span>
                     ) : (
-                      <span>Chưa cài (có thể cài 1 chạm bên dưới)</span>
+                      <span>{lang === "en" ? "Not installed (1-click below)" : "Chưa cài (có thể cài 1 chạm bên dưới)"}</span>
                     )}
                   </div>
                 </div>
@@ -400,8 +484,12 @@ export function OnboardingWizard() {
                 <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-400 text-[11px] space-y-2">
                   <div className="font-bold text-amber-950">
                     {ollamaInstalled
-                      ? "Ollama đã có trên máy nhưng chưa chạy nền."
-                      : "Chưa cài Ollama? Bấm nút bên dưới để tự tải & cài Ollama chính chủ (hoặc bỏ qua nếu chỉ dùng Tầng 1 + Gemini API Key)."}
+                      ? lang === "en"
+                        ? "Ollama is installed on this PC but not running yet."
+                        : "Ollama đã có trên máy nhưng chưa chạy nền."
+                      : lang === "en"
+                        ? "No Ollama yet? Click below for 1-click official Ollama install (or skip to use Tier 1 + Cloud Gemini API)."
+                        : "Chưa cài Ollama? Bấm nút bên dưới để tự tải & cài Ollama chính chủ (hoặc bỏ qua nếu chỉ dùng Tầng 1 + Gemini API Key)."}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -411,7 +499,11 @@ export function OnboardingWizard() {
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0E0E13] text-white font-black text-[11px] cursor-pointer hover:bg-zinc-800 disabled:opacity-50"
                     >
                       <Download className="w-3.5 h-3.5 text-[#F43F5E]" />
-                      <span>{ollamaInstalled ? "Khởi động Ollama ngay" : "Tự tải & cài Ollama (1 chạm)"}</span>
+                      <span>
+                        {ollamaInstalled
+                          ? lang === "en" ? "Start Ollama Now" : "Khởi động Ollama ngay"
+                          : lang === "en" ? "1-Click Install Ollama" : "Tự tải & cài Ollama (1 chạm)"}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -419,7 +511,7 @@ export function OnboardingWizard() {
                       className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white border border-[#0E0E13] font-bold text-[10.5px] cursor-pointer hover:bg-zinc-100"
                     >
                       <ExternalLink className="w-3 h-3" />
-                      <span>Mở trang ollama.com</span>
+                      <span>ollama.com</span>
                     </button>
                   </div>
                 </div>
@@ -428,7 +520,9 @@ export function OnboardingWizard() {
               {/* Installed models selector */}
               {installedModels.length > 0 && (
                 <div className="space-y-1.5">
-                  <div className="text-[11px] font-bold text-zinc-600">Model đã có sẵn trên máy (bấm để chọn mặc định):</div>
+                  <div className="text-[11px] font-bold text-zinc-600">
+                    {lang === "en" ? "Installed models (click to set default):" : "Model đã có sẵn trên máy (bấm để chọn mặc định):"}
+                  </div>
                   <div className="flex flex-wrap gap-1.5">
                     {installedModels.slice(0, 12).map((m) => (
                       <button
@@ -446,11 +540,11 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* 1-Click Download Model cards (visible whenever Ollama is installed/online) */}
+              {/* 1-Click Download Model cards */}
               {ollamaInstalled && (
                 <div className="space-y-1.5 pt-1 border-t border-zinc-200">
                   <div className="text-[11px] font-bold text-zinc-600">
-                    Tải nhanh model AI Local trực tiếp (1 chạm):
+                    {lang === "en" ? "1-Click Download Recommended Local Models:" : "Tải nhanh model AI Local trực tiếp (1 chạm):"}
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
                     {RECOMMENDED_MODELS.map((m) => {
@@ -478,7 +572,7 @@ export function OnboardingWizard() {
                             )}
                           </div>
                           <div className={`text-[9.5px] mt-0.5 ${already && selectedModel === m.id ? "text-emerald-200" : "text-zinc-500"}`}>
-                            {m.size} · {already ? "Đã có" : m.desc}
+                            {m.size} · {already ? (lang === "en" ? "Installed" : "Đã có") : m.desc}
                           </div>
                         </button>
                       );
@@ -489,7 +583,11 @@ export function OnboardingWizard() {
                       type="text"
                       value={customPullModel}
                       onChange={(e) => setCustomPullModel(e.target.value)}
-                      placeholder="Hoặc nhập tên model bất kỳ (vd: llama3.2:3b, gemma3:4b, qwen2.5:7b)..."
+                      placeholder={
+                        lang === "en"
+                          ? "Or enter any Ollama model name (e.g. llama3.2:3b, gemma3:4b)..."
+                          : "Hoặc nhập tên model bất kỳ (vd: llama3.2:3b, gemma3:4b, qwen2.5:7b)..."
+                      }
                       className="flex-1 px-2.5 py-1.5 rounded-lg bg-zinc-50 border border-[#0E0E13] text-[11px] font-medium focus:outline-none"
                     />
                     <button
@@ -499,7 +597,7 @@ export function OnboardingWizard() {
                       className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#0E0E13] text-white text-[11px] font-black cursor-pointer disabled:opacity-40"
                     >
                       <Download className="w-3 h-3" />
-                      <span>Tải model</span>
+                      <span>{lang === "en" ? "Pull Model" : "Tải model"}</span>
                     </button>
                   </div>
                 </div>
@@ -508,14 +606,18 @@ export function OnboardingWizard() {
               {/* Python deps 1-click helper if backend isn't online yet */}
               {!backend && (
                 <div className="p-2.5 rounded-xl bg-zinc-100 border border-[#0E0E13]/30 text-[11px] flex items-center justify-between gap-2">
-                  <span>Máy mới chưa cài gói Python? Bấm nút bên phải để cài tự động.</span>
+                  <span>
+                    {lang === "en"
+                      ? "Fresh Windows PC? Click right to auto-install Python packages."
+                      : "Máy mới chưa cài gói Python? Bấm nút bên phải để cài tự động."}
+                  </span>
                   <button
                     type="button"
                     disabled={taskBusy}
                     onClick={handleInstallPythonDeps}
                     className="px-2.5 py-1 rounded-lg bg-[#0E0E13] text-white font-black text-[10.5px] shrink-0 cursor-pointer disabled:opacity-50"
                   >
-                    Cài Python Deps
+                    {lang === "en" ? "Install Python Deps" : "Cài Python Deps"}
                   </button>
                 </div>
               )}
@@ -526,7 +628,13 @@ export function OnboardingWizard() {
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-1.5 font-black text-emerald-400">
                       <Terminal className="w-3.5 h-3.5" />
-                      <span>{taskBusy ? taskLabel : taskError ? "Thông báo lỗi" : "Tiến trình hoàn tất"}</span>
+                      <span>
+                        {taskBusy
+                          ? taskLabel
+                          : taskError
+                            ? lang === "en" ? "Error" : "Thông báo lỗi"
+                            : lang === "en" ? "Completed" : "Tiến trình hoàn tất"}
+                      </span>
                     </div>
                     {taskBusy && (
                       <button
@@ -535,7 +643,7 @@ export function OnboardingWizard() {
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black cursor-pointer"
                       >
                         <Square className="w-2.5 h-2.5 fill-current" />
-                        <span>Dừng</span>
+                        <span>{lang === "en" ? "Stop" : "Dừng"}</span>
                       </button>
                     )}
                   </div>
@@ -556,14 +664,18 @@ export function OnboardingWizard() {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 font-black text-xs">
                   <KeyRound className="w-4 h-4 shrink-0" />
-                  <span>Cloud Gemini API Key — Tầng 3 cuối (Tùy chọn)</span>
+                  <span>
+                    {lang === "en"
+                      ? "Cloud Gemini API Key — Tier 3 Fallback (Optional)"
+                      : "Cloud Gemini API Key — Tầng 3 cuối (Tùy chọn)"}
+                  </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => openUrl("https://aistudio.google.com/apikey")}
                   className="inline-flex items-center gap-1 text-[10.5px] font-black text-rose-600 hover:underline cursor-pointer"
                 >
-                  <span>Lấy Key miễn phí</span>
+                  <span>{lang === "en" ? "Get Free Key" : "Lấy Key miễn phí"}</span>
                   <ExternalLink className="w-3 h-3" />
                 </button>
               </div>
@@ -571,7 +683,11 @@ export function OnboardingWizard() {
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Bỏ trống nếu chưa cần · Có thể dán 1 hoặc nhiều key cách nhau dấu phẩy..."
+                placeholder={
+                  lang === "en"
+                    ? "Leave empty if not needed · Paste one or comma-separated backup keys..."
+                    : "Bỏ trống nếu chưa cần · Có thể dán 1 hoặc nhiều key cách nhau dấu phẩy..."
+                }
                 className="w-full px-3 py-2 rounded-xl bg-zinc-50 border-2 border-[#0E0E13] text-xs font-medium text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none select-text"
               />
             </div>
@@ -589,7 +705,7 @@ export function OnboardingWizard() {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs bg-zinc-100 hover:bg-rose-100 text-zinc-700 hover:text-rose-700 border-2 border-[#0E0E13] cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span>Từ chối &amp; Thoát</span>
+              <span>{lang === "en" ? "Decline & Exit" : "Từ chối & Thoát"}</span>
             </button>
             <button
               type="button"
@@ -601,7 +717,7 @@ export function OnboardingWizard() {
                   : "bg-zinc-200 text-zinc-400 cursor-not-allowed"
               }`}
             >
-              <span>Tiếp tục cài đặt AI</span>
+              <span>{lang === "en" ? "Continue to AI Setup" : "Tiếp tục cài đặt AI"}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </>
@@ -614,7 +730,7 @@ export function OnboardingWizard() {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-black text-xs bg-zinc-100 border-2 border-[#0E0E13] cursor-pointer hover:bg-zinc-200 disabled:opacity-40"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Quay lại</span>
+              <span>{lang === "en" ? "Back" : "Quay lại"}</span>
             </button>
             <button
               type="button"
@@ -627,7 +743,13 @@ export function OnboardingWizard() {
               }`}
             >
               <Sparkles className="w-4 h-4 text-[#F43F5E]" />
-              <span>{finishing ? "Đang mở Mini HUD..." : taskBusy ? "Đang tải xong mới mở..." : "Chấp nhận & Mở Mini HUD"}</span>
+              <span>
+                {finishing
+                  ? lang === "en" ? "Launching Mini HUD..." : "Đang mở Mini HUD..."
+                  : taskBusy
+                    ? lang === "en" ? "Waiting for download..." : "Đang tải xong mới mở..."
+                    : lang === "en" ? "Accept & Launch Mini HUD" : "Chấp nhận & Mở Mini HUD"}
+              </span>
             </button>
           </>
         )}

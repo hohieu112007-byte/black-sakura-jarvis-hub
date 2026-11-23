@@ -28,6 +28,7 @@ import { SakugaClickOverlay } from "./components/SakugaClickOverlay.jsx";
 import { SakugaWaveform } from "./components/SakugaWaveform.jsx";
 import { SettingsDrawer } from "./components/SettingsDrawer.jsx";
 import { ExpandedPanel } from "./components/ExpandedPanel.jsx";
+import { useT } from "./i18n.js";
 import { resolveSakugaPalette, resolveMoodTheme, routeToVfxMode } from "./sakugaVfxEngine.js";
 import {
   playBeep,
@@ -115,10 +116,12 @@ export default function App() {
     sakugaEnabled: true,
     displayMode: "cursor",
     displays: [],
+    uiLanguage: "vi",
     customDictionary: [],
     installedApps: [],
     health: { fastDesktop: true, agentDesktop: false, playwright: false },
   });
+  const t = useT(hubState.uiLanguage);
   const wakeNameRef = useRef("Luna");
   wakeNameRef.current = hubState.wakeName || "Luna";
   const lastWakeClientRef = useRef(0);
@@ -475,6 +478,16 @@ export default function App() {
   // Transparent overlay hit-testing so clicks outside Island/Drawer pass cleanly to desktop
   useEffect(() => {
     let lastIgnored = true;
+    const isInsideInteractive = (x, y) => {
+      const nodes = document.querySelectorAll('[data-hub-interactive="true"]');
+      for (const el of nodes) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0 && x >= r.left - 8 && x <= r.right + 8 && y >= r.top - 8 && y <= r.bottom + 8) {
+          return true;
+        }
+      }
+      return false;
+    };
     const clearHoverAndIgnore = () => {
       if (lastHoverStateRef.current) {
         lastHoverStateRef.current = false;
@@ -486,15 +499,8 @@ export default function App() {
       }
     };
     const syncHit = (x, y) => {
-      const nodes = document.querySelectorAll('[data-hub-interactive="true"]');
-      let inside = false;
-      for (const el of nodes) {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0 && x >= r.left - 4 && x <= r.right + 4 && y >= r.top - 4 && y <= r.bottom + 4) {
-          inside = true;
-          break;
-        }
-      }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const inside = isInsideInteractive(x, y);
       const nextIgnore = !inside;
       if (inside !== lastHoverStateRef.current) {
         lastHoverStateRef.current = inside;
@@ -510,13 +516,30 @@ export default function App() {
       }
     };
     const onMove = (e) => syncHit(e.clientX, e.clientY);
+    const onPointerDown = (e) => {
+      // Ensure immediate capture if user clicks/taps rapidly without prior hover ticks
+      if (isInsideInteractive(e.clientX, e.clientY) && lastIgnored) {
+        lastIgnored = false;
+        window.jarvisApi?.setIgnoreMouse?.(false);
+      }
+    };
+    const onBlur = () => {
+      // Only release mouse capture on blur if hover already ended; never drop capture while user is clicking inside HUD
+      if (!lastHoverStateRef.current) {
+        clearHoverAndIgnore();
+      }
+    };
     window.addEventListener("mousemove", onMove, { passive: true });
+    window.addEventListener("pointermove", onMove, { passive: true });
+    window.addEventListener("pointerdown", onPointerDown, { capture: true, passive: true });
     document.addEventListener("mouseleave", clearHoverAndIgnore);
-    window.addEventListener("blur", clearHoverAndIgnore);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onPointerDown, { capture: true });
       document.removeEventListener("mouseleave", clearHoverAndIgnore);
-      window.removeEventListener("blur", clearHoverAndIgnore);
+      window.removeEventListener("blur", onBlur);
     };
   }, []);
 
@@ -559,7 +582,22 @@ export default function App() {
     };
     syncState();
     const rafId = requestAnimationFrame(syncState);
-    return () => cancelAnimationFrame(rafId);
+    // Re-sync after Framer Motion spring/collapse animations finish so interactiveRects never stay stale
+    const animTimer1 = setTimeout(syncState, 160);
+    const animTimer2 = setTimeout(syncState, 350);
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => syncState());
+      for (const el of document.querySelectorAll('[data-hub-interactive="true"]')) {
+        ro.observe(el);
+      }
+    }
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(animTimer1);
+      clearTimeout(animTimer2);
+      ro?.disconnect();
+    };
   }, [
     collectInteractiveRects,
     confirmReq,
@@ -1291,7 +1329,7 @@ export default function App() {
           setIsFadingOut(false);
           window.jarvisApi?.pingActivity?.();
           const btn = e.target?.closest?.("button");
-          if (btn) triggerSakugaBurst(btn);
+          if (btn && btn.dataset?.noSakuga !== "true") triggerSakugaBurst(btn);
         }}
         className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center pointer-events-none transition-[opacity,transform,filter] duration-300 ${
           hubShake ? "sakuga-hub-shake" : ""
@@ -1379,7 +1417,7 @@ export default function App() {
           {isDragOver && (
             <div className="absolute inset-0 z-30 bg-white/95 flex items-center justify-center gap-1.5 text-[11px] font-black uppercase tracking-wide text-[#0E0E13] border-2 border-dashed border-[#0E0E13] rounded-[14px]">
               <Paperclip className="w-3.5 h-3.5" />
-              <span>Thả ảnh / tài liệu vào đây</span>
+              <span>{t.dropFilesHere}</span>
             </div>
           )}
 
@@ -1523,7 +1561,12 @@ export default function App() {
                       </button>
                       <button
                         type="button"
+                        data-no-sakuga="true"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                        }}
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           clearAutoIdle();
                           setAttachMenuOpen(false);
@@ -1538,12 +1581,14 @@ export default function App() {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
+                          e.stopPropagation();
                           window.jarvisApi?.quitApp?.();
                         }}
-                        title="Ẩn xuống khay (Shift+Click hoặc Chuột phải để thoát hẳn)"
-                        className="w-6 h-6 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
+                        title={t.hideTitle}
+                        aria-label="Hide Hub"
+                        className="relative z-30 w-7 h-7 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5 pointer-events-none" />
                       </button>
                     </>
                   )}
@@ -1616,8 +1661,8 @@ export default function App() {
                         }}
                         placeholder={
                           wakeOn
-                            ? `Gọi 'Hey ${hubState.wakeName || "Luna"}', hoặc gõ lệnh...`
-                            : "Nhập lệnh hoặc giữ Mic..."
+                            ? t.typePlaceholderWake(hubState.wakeName || "Luna")
+                            : t.typePlaceholderNoWake
                         }
                         className="w-full min-w-0 bg-transparent px-1 text-[12px] font-bold text-[#0E0E13] placeholder:text-zinc-400 focus:outline-none"
                       />
@@ -1626,7 +1671,7 @@ export default function App() {
                           type="submit"
                           data-sakuga-power="heavy"
                           onClick={(e) => triggerSakugaBurst(e, { power: "heavy" })}
-                          title="Gửi (Enter)"
+                          title={t.sendTitle}
                           className="w-6 h-6 shrink-0 inline-flex items-center justify-center rounded-full bg-[#0E0E13] hover:opacity-85 text-white border border-[#0E0E13] cursor-pointer"
                         >
                           <Send className="w-3 h-3" />
@@ -1643,14 +1688,14 @@ export default function App() {
                         setTimeout(() => inputRef.current?.focus(), 40);
                       }}
                       className="flex-1 min-w-0 text-left truncate px-1 text-[12px] font-bold italic text-[#0E0E13] hover:opacity-75 cursor-text"
-                      title="Bấm để gõ hoặc sửa lệnh"
+                      title={t.typePlaceholderNoWake}
                     >
                       {isVoiceCapturing || isBusyThinking
-                        ? transcript || "Đang nghe..."
+                        ? transcript || t.listeningFallback
                         : transcript ||
                           (wakeOn
-                            ? `Sẵn sàng — gọi 'Hey ${hubState.wakeName || "Luna"}' hoặc bấm để gõ...`
-                            : "Nhập lệnh hoặc giữ Mic...")}
+                            ? t.readyWakeHint(hubState.wakeName || "Luna")
+                            : t.typePlaceholderNoWake)}
                     </button>
                   )}
                 </div>
@@ -1665,7 +1710,7 @@ export default function App() {
                   }}
                   onMouseUp={stopManualVoice}
                   onClick={(e) => triggerSakugaBurst(e)}
-                  title="Giữ để nói (thả ra để gửi)"
+                  title={t.holdMicTitle}
                   className={`w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-full sakuga-btn cursor-pointer ${
                     isVoiceCapturing
                       ? "bg-[#0E0E13] text-white"
@@ -1688,7 +1733,7 @@ export default function App() {
                       if (nextWake && !isVoiceCapturing && !isBusyThinking && !confirmReq) {
                         setIsEditing(false);
                         setVfxMode("idle");
-                        setTranscript(`Wake BẬT — chờ gọi 'Hey ${hubState.wakeName || "Luna"}'`);
+                        setTranscript(`Wake ${t.on} — 'Hey ${hubState.wakeName || "Luna"}'`);
                         if (!settingsOpen && !expandedOpen) {
                           scheduleReturnIdle(2000);
                         }
@@ -1697,7 +1742,7 @@ export default function App() {
                     className={`h-[22px] inline-flex items-center gap-1 px-2.5 rounded-full sakuga-btn-sm font-black cursor-pointer ${
                       wakeOn ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
                     }`}
-                    title={`Bật/tắt gọi 'OK ${hubState.wakeName || "Luna"}'`}
+                    title={`Wake 'OK ${hubState.wakeName || "Luna"}'`}
                   >
                     <Radio className="w-2.5 h-2.5" />
                     <span>Wake</span>
@@ -1711,10 +1756,10 @@ export default function App() {
                     className={`h-[22px] inline-flex items-center gap-1 px-2.5 rounded-full sakuga-btn-sm font-black cursor-pointer ${
                       voiceOn ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
                     }`}
-                    title="Bật/tắt tự đọc phản hồi"
+                    title={t.voiceToggleTitle}
                   >
                     {voiceOn ? <Volume2 className="w-2.5 h-2.5" /> : <VolumeX className="w-2.5 h-2.5" />}
-                    <span>{voiceOn ? "Voice" : "Mute"}</span>
+                    <span>{voiceOn ? t.voiceLabel : t.muteLabel}</span>
                   </button>
                 </div>
 
@@ -1733,9 +1778,9 @@ export default function App() {
                   className={`h-[22px] inline-flex items-center gap-1 px-2.5 rounded-full sakuga-btn-sm font-black whitespace-nowrap cursor-pointer ${
                     expandedOpen ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
                   }`}
-                  title="Mở rộng lịch sử & câu trả lời"
+                  title={t.detailsTitle}
                 >
-                  <span>Chi tiết</span>
+                  <span>{t.details}</span>
                   {expandedOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
               </div>
@@ -1824,7 +1869,12 @@ export default function App() {
                       </button>
                       <button
                         type="button"
+                        data-no-sakuga="true"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                        }}
                         onClick={(e) => {
+                          e.preventDefault();
                           e.stopPropagation();
                           clearAutoIdle();
                           setAttachMenuOpen(false);
@@ -1839,12 +1889,14 @@ export default function App() {
                         }}
                         onContextMenu={(e) => {
                           e.preventDefault();
+                          e.stopPropagation();
                           window.jarvisApi?.quitApp?.();
                         }}
-                        title="Ẩn xuống khay (Shift+Click hoặc Chuột phải để thoát hẳn)"
-                        className="w-6 h-6 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
+                        title={t.hideTitle}
+                        aria-label="Hide Hub"
+                        className="relative z-30 w-7 h-7 inline-flex items-center justify-center rounded-full sakuga-btn-sm bg-white text-[#0E0E13] hover:bg-[#0E0E13] hover:text-white cursor-pointer"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5 pointer-events-none" />
                       </button>
                     </>
                   )}
@@ -1940,7 +1992,7 @@ export default function App() {
                   }}
                   className="h-[22px] inline-flex items-center gap-1 px-2.5 rounded-full sakuga-btn-sm bg-white hover:bg-zinc-100 font-black text-[#0E0E13] cursor-pointer"
                 >
-                  <span>+ Lệnh mới</span>
+                  <span>{t.newCommand}</span>
                 </button>
                 <button
                   type="button"
@@ -1958,7 +2010,7 @@ export default function App() {
                     expandedOpen ? "bg-[#0E0E13] text-white" : "bg-white hover:bg-zinc-100 text-[#0E0E13]"
                   }`}
                 >
-                  <span>Chi tiết</span>
+                  <span>{t.details}</span>
                   {expandedOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                 </button>
               </div>
@@ -1986,7 +2038,7 @@ export default function App() {
                 className="flex-1 h-7 inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border border-[#0E0E13]/30 text-[11px] font-bold text-[#0E0E13] cursor-pointer transition-colors"
               >
                 <Paperclip className="w-3 h-3" />
-                <span>Chọn Ảnh / Tài liệu từ máy</span>
+                <span>{t.pickFileFromPc}</span>
               </button>
               <button
                 type="button"
@@ -1997,7 +2049,7 @@ export default function App() {
                 className="flex-1 h-7 inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-100 hover:bg-[#0E0E13] hover:text-white border border-[#0E0E13]/30 text-[11px] font-bold text-[#0E0E13] cursor-pointer transition-colors"
               >
                 <ClipboardPaste className="w-3 h-3" />
-                <span>Dán từ Clipboard (Ctrl+V)</span>
+                <span>{t.pasteClipboard}</span>
               </button>
             </motion.div>
           )}
@@ -2057,11 +2109,7 @@ export default function App() {
             >
               <div className="flex items-center gap-1.5 text-xs font-black text-[#0E0E13] mb-1.5">
                 <AlertTriangle className="w-4 h-4 text-[#FF6B00]" />
-                <span>
-                  {confirmReq.toolName === "handoff_to_antigravity"
-                    ? "Xác nhận xếp hàng sang Antigravity"
-                    : "Xác nhận thao tác MCP (Safe Mode)"}
-                </span>
+                <span>{t.confirmMcpSafe}</span>
               </div>
               <code className="block w-full p-2 rounded-lg bg-white border-2 border-[#0E0E13] text-[10.5px] font-bold text-[#0E0E13] break-all mb-2.5">
                 {confirmReq.summary}
@@ -2080,7 +2128,7 @@ export default function App() {
                   }}
                   className="px-3 py-1.5 rounded-lg bg-white hover:bg-zinc-100 sakuga-btn text-xs font-black text-[#0E0E13] cursor-pointer"
                 >
-                  ✕ Hủy (Esc)
+                  {t.confirmReject}
                 </button>
                 <button
                   type="button"
@@ -2095,7 +2143,7 @@ export default function App() {
                   }}
                   className="px-3 py-1.5 rounded-lg bg-[#0E0E13] hover:bg-zinc-800 sakuga-btn text-xs font-black text-white cursor-pointer"
                 >
-                  ✓ Cho phép (Enter)
+                  {t.confirmAllow}
                 </button>
               </div>
             </motion.div>
@@ -2116,6 +2164,7 @@ export default function App() {
               onToggleVoiceAlways={() => window.jarvisApi?.setVoiceAlways?.(!voiceOn)}
               onToggleSakuga={(next) => window.jarvisApi?.setSakugaEnabled?.(Boolean(next))}
               onChangeDisplayMode={(mode) => window.jarvisApi?.setDisplayMode?.(mode)}
+              onChangeUiLanguage={(lang) => window.jarvisApi?.setUiLanguage?.(lang)}
               onRecenter={() => window.jarvisApi?.recenterWindow?.()}
               onVramUnload={triggerVramDissolveFlow}
               onPreviewVfx={handlePreviewVfx}
@@ -2143,6 +2192,7 @@ export default function App() {
               recentCommands={hubState.recentCommands}
               activities={activities}
               hotkeyLabel={prettyHotkey}
+              uiLanguage={hubState.uiLanguage}
               onSpeak={async () => {
                 if (!lastAnswerText) return;
                 const res = await window.jarvisApi?.speakText?.(lastAnswerText);

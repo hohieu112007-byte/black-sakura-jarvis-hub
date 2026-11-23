@@ -2,7 +2,26 @@
 
 Trợ lý AI điều khiển máy tính Windows ưu tiên chạy nội bộ (**Local-First**, **Zero-VRAM Fast-Path**), kết hợp **Win32/UIA tốc độ cao (<50ms)**, **bất kỳ model Ollama nào**, **nhận diện giọng nói Faster-Whisper**, **MCP (`fast-desktop`, `agent-desktop`, `playwright`)**, và giao diện nổi **Electron + React HUD** phong cách manga Sakuga.
 
-> Hỗ trợ **mọi cấu hình máy Windows 10/11**: máy có GPU NVIDIA (4GB–24GB+), máy chỉ có **CPU / card onboard**, máy **chưa cài Ollama** (chạy Tầng 1 điều khiển tức thì + tùy chọn Cloud Gemini API), và cho phép chọn **bất kỳ model Ollama nào** đã tải về máy.
+> Hỗ trợ **mọi cấu hình máy Windows 10/11**: máy có GPU NVIDIA (4GB–24GB+), máy chỉ có **CPU / card onboard**, máy **chưa cài Ollama** (chạy Tầng 1 điều khiển tức thì + tùy chọn Cloud Gemini API), **chống xung đột cổng & bảo vệ VRAM khi chạy song song app AI khác**, và hỗ trợ **chuyển ngôn ngữ giao diện Tiếng Việt / English**.
+
+---
+
+## Ảnh chụp giao diện thực tế (Screenshots)
+
+| Floating Mini HUD (Spotlight Bar) | Setup Wizard lần đầu & Cài Ollama 1 chạm |
+| :---: | :---: |
+| ![Floating Mini HUD](docs/screenshots/02-hud-floating-bar.png) | ![Setup Wizard Ollama](docs/screenshots/01b-setup-wizard-ollama.png) |
+
+| Quản lý AI & VRAM + Chọn bất kỳ Model Ollama | Giao diện Tiếng Anh & Nhận diện đa màn hình / DPI |
+| :---: | :---: |
+| ![AI & VRAM Settings](docs/screenshots/03-hud-settings-ai-vram.png) | ![English UI & Multi-Display](docs/screenshots/04-hud-english-display-scaling.png) |
+
+<details>
+<summary>Xem thêm màn hình Cảnh báo bảo mật & Quyền truy cập lần đầu (Step 1 Setup Wizard)</summary>
+
+![First-Run Security & Permissions](docs/screenshots/01-setup-wizard.png)
+
+</details>
 
 ---
 
