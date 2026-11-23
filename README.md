@@ -92,8 +92,7 @@ black-sakura-jarvis-hub/
 ├── backend/                  # FastAPI server, 4-tier VRAM router, daily scenarios, Win32 native, STT/TTS
 ├── fast-desktop-mcp/         # MCP server điều khiển Windows/UIA/Edge/Word (Node.js + PowerShell, 0 deps)
 ├── jarvis-hub/               # Giao diện nổi Electron + React + Tailwind + script đóng gói .exe
-├── docs/                     # Hướng dẫn cài đặt & sử dụng chi tiết
-├── .github/workflows/        # GitHub Actions tự động đóng gói Windows Portable .exe
+├── docs/                     # Hướng dẫn cài đặt (SETUP_GUIDE.md) & mẫu GitHub Actions build .exe
 ├── start_backend.bat         # Khởi chạy Backend (tự tìm .venv / Python 3.10–3.13 & Ollama)
 ├── build_exe.bat             # Đóng gói nhanh BlackSakuraJarvisHub.exe
 ├── requirements.txt          # Danh sách thư viện Python
