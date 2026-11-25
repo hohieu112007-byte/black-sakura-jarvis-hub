@@ -72,6 +72,9 @@ export const UI_STRINGS = {
     omniparserDesc:
       "Tự khoanh khung & đánh số icon/nút không chữ trên màn hình giúp Vision bấm chuẩn xác hơn thay cho lưới 10×10. Chỉ nạp lazy (~1.6 GB VRAM) lúc cần bấm ảnh và tự xả Whisper trước.",
     statusLabel: "Trạng thái:",
+    sttEngineTitle: "Nhận diện giọng nói (Dual STT)",
+    sttInstallBtn: "Cài VietNote ASR",
+    sttInstalling: "Đang tải...",
     on: "BẬT",
     off: "TẮT",
 
@@ -187,6 +190,9 @@ export const UI_STRINGS = {
     omniparserDesc:
       "Detects & labels icon-only buttons on screen when UIA misses, using lazy VRAM (~1.6 GB) and unloading Whisper first to fit 8 GB GPUs.",
     statusLabel: "Status:",
+    sttEngineTitle: "Speech Recognition (Dual STT)",
+    sttInstallBtn: "Install VietNote ASR",
+    sttInstalling: "Installing...",
     on: "ON",
     off: "OFF",
 

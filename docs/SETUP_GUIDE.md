@@ -74,6 +74,9 @@ Script sẽ tự động:
   pip install torch ultralytics huggingface-hub
   ```
   Sau đó bật công tắc **OmniParser V2** trong Settings (mặc định tắt để tiết kiệm ~1.6 GB VRAM và dùng lưới 10×10 miễn phí).
+- **Dual-STT kết hợp `VietNote-ASR` (0 MB VRAM) + `Faster-Whisper`:**
+  Trong **Cài đặt -> AI & VRAM -> Nhận diện giọng nói (Dual STT)**, bạn có thể bấm **"Cài VietNote ASR"** để dùng model `Kaisye/VietNote-Zipformer-78M-Streaming` (nền `sherpa-onnx` trên CPU, **0 MB VRAM**) kết hợp danh sách từ khóa tiếng Anh (`hotwords` lấy tự động từ app đã cài + Từ điển riêng) cho lệnh Việt-Anh & chép lời, trong khi vẫn giữ **Faster-Whisper** cho chế độ tiếng Anh thuần hoặc làm dự phòng.
+  *(Lưu ý giấy phép: trọng số model `VietNote-Zipformer-78M-Streaming` được tải tách rời từ Hugging Face theo điều khoản của tác giả `kaisye/vietnote-asr`, không đóng gói chung trong mã nguồn MIT).*
 - **Đổi thư mục Sandbox:**
   Mặc định dữ liệu xuất Word/CSV và cache nằm ở `C:\AI-Sandbox` (nếu đã có) hoặc `./sandbox` trong thư mục dự án. Bạn có thể đặt biến môi trường `JARVIS_SANDBOX_DIR` trong `.env` để đổi vị trí lưu.
 

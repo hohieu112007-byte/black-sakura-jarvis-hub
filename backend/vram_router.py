@@ -29,7 +29,7 @@ from .context_engine import (
 )
 from .daily_scenarios import KNOWN_APPS, KNOWN_WEBSITES, try_daily_scenario
 from .mcp_executor import LocalMcpManager, get_mcp_manager
-from .stt_engine import HUB_STATE_PATH, STTEngine, normalize_keep_alive_key
+from .stt_engine import HUB_STATE_PATH, STTEngine, normalize_keep_alive_key, normalize_stt_engine_mode
 from .vision_parser import OmniParserEngine
 from .win_native import assert_safe_target_name, is_blocked_hotkey
 
@@ -1028,6 +1028,7 @@ class VramRouter:
             model_size="turbo",
             keep_alive=self.keep_alive_setting,
             is_gaming_fn=self._is_gaming_active,
+            engine_mode=normalize_stt_engine_mode(cfg.get("stt_engine_mode", "hybrid")),
         )
         self.vision_parser = OmniParserEngine(enabled=bool(cfg.get("omniparser_enabled", False)))
         self.browser_use = BrowserUseBridge(enabled=bool(cfg.get("browser_use_enabled", False)))
@@ -1064,6 +1065,15 @@ class VramRouter:
         clean = [str(a).strip() for a in (apps or []) if str(a).strip()]
         self.synced_apps = clean[:50]
         self.stt.extra_terms = self.synced_apps[:20]
+
+    def _read_ui_language(self) -> str:
+        if HUB_STATE_PATH.exists():
+            try:
+                st = json.loads(HUB_STATE_PATH.read_text(encoding="utf-8"))
+                return "en" if st.get("uiLanguage") == "en" else "vi"
+            except Exception:
+                pass
+        return "vi"
 
     def _get_dynamic_app_hint(self) -> str:
         terms: List[str] = list(self.synced_apps)
@@ -1108,6 +1118,7 @@ class VramRouter:
             "gaming_guard_enabled": self.gaming_guard_enabled,
             "omniparser_enabled": self.vision_parser.enabled,
             "browser_use_enabled": self.browser_use.enabled,
+            "stt_engine_mode": self.stt.engine_mode,
         }
         tmp = CONFIG_PATH.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1142,6 +1153,12 @@ class VramRouter:
     def set_thinking_mode(self, mode: str) -> Dict[str, Any]:
         with self._lock:
             self.thinking_mode = normalize_thinking_mode(mode)
+            self._save_config()
+        return self.get_status()
+
+    def set_stt_engine(self, mode: str) -> Dict[str, Any]:
+        with self._lock:
+            self.stt.set_engine_mode(mode)
             self._save_config()
         return self.get_status()
 
@@ -1861,6 +1878,12 @@ class VramRouter:
             "vision_available": vision_available,
             "ollama_loaded_models": ollama_loaded,
             "stt_loaded": stt_loaded,
+            "stt_status": self.stt.get_status(),
+            "stt_engine_mode": self.stt.engine_mode,
+            "vietnote_ready": self.stt.vietnote.is_ready(),
+            "vietnote_pkg_installed": self.stt.vietnote.is_package_installed(),
+            "vietnote_model_ready": self.stt.vietnote.is_model_ready(),
+            "vietnote_hotwords_count": len(self.stt.vietnote.build_hotwords_list(self.stt.extra_terms)),
             "omniparser_enabled": omni_status["enabled"],
             "omniparser_available": omni_status["available"],
             "omniparser_loaded": omni_status["loaded"],
@@ -3317,7 +3340,14 @@ class VramRouter:
         gaming_now = self._is_gaming_active()
         if gaming_now:
             self.force_unload_all()
-        stt_out = self.stt.transcribe(wav_bytes, is_gaming=gaming_now)
+        ext_active, _ext_models, _free_gb = self._detect_external_ai_contention()
+        stt_out = self.stt.transcribe(
+            wav_bytes,
+            is_gaming=gaming_now,
+            mode="dictation",
+            prefer_cpu_only=bool(ext_active or not _detect_gpu_info().get("has_nvidia_gpu")),
+            ui_language=self._read_ui_language(),
+        )
         transcript = stt_out.get("text", "").strip()
         if stt_out.get("error") and not transcript:
             return {"ok": False, "error": str(stt_out["error"]), "stt": stt_out}
@@ -3398,7 +3428,14 @@ class VramRouter:
         gaming_now = self._is_gaming_active()
         if gaming_now:
             self.force_unload_all()
-        stt_out = self.stt.transcribe(wav_bytes, is_gaming=gaming_now)
+        ext_active, _ext_models, _free_gb = self._detect_external_ai_contention()
+        stt_out = self.stt.transcribe(
+            wav_bytes,
+            is_gaming=gaming_now,
+            mode="command",
+            prefer_cpu_only=bool(ext_active or not _detect_gpu_info().get("has_nvidia_gpu")),
+            ui_language=self._read_ui_language(),
+        )
         self._enter_request_scope()
         try:
             transcript = stt_out.get("text", "").strip()

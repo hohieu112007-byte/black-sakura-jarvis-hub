@@ -1725,6 +1725,70 @@ function registerIpc() {
     return res;
   });
 
+  ipcMain.handle("hub:install-vietnote-asr", async () => {
+    if (activeSetupProc) {
+      return { ok: false, error: "Đang có tiến trình cài đặt khác chạy." };
+    }
+    const pyExe = resolvePythonExecutable({ preferConsole: true });
+    if (!pyExe) {
+      return { ok: false, error: "Chưa tìm thấy Python 3.10+ trên máy." };
+    }
+    const emitVietnote = (msg, extra = {}) => {
+      emitSetupProgress({ task: "vietnote-install", message: msg, ...extra });
+      emitHud({ type: "vietnote_install_progress", message: msg, ...extra });
+    };
+
+    emitVietnote("Đang cài đặt sherpa-onnx & tải model Kaisye/VietNote-Zipformer-78M-Streaming (~100 MB)...");
+    const pyScript = [
+      "import importlib.util, subprocess, sys",
+      "need = [p for p, m in (('sherpa-onnx', 'sherpa_onnx'), ('huggingface-hub', 'huggingface_hub')) if importlib.util.find_spec(m) is None]",
+      "if need:",
+      "    print('Installing:', ', '.join(need), flush=True)",
+      "    r = subprocess.run([sys.executable, '-m', 'pip', 'install', *need], check=False)",
+      "    if r.returncode != 0: sys.exit(r.returncode)",
+      "from backend.stt_engine import download_vietnote_asr_model",
+      "res = download_vietnote_asr_model()",
+      "print('VIETNOTE_DOWNLOAD_RES:', res.get('ok'), res.get('model_dir'), flush=True)",
+      "sys.exit(0 if res.get('ok') else 2)",
+    ].join("\n");
+
+    const res = await new Promise((resolve) => {
+      let lastLine = "";
+      const proc = spawn(pyExe, ["-c", pyScript], {
+        cwd: WORKSPACE_ROOT,
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      activeSetupProc = proc;
+      const onChunk = (buf) => {
+        const lines = String(buf.toString("utf8"))
+          .replace(/\r/g, "\n")
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean);
+        if (lines.length > 0) {
+          lastLine = lines[lines.length - 1].slice(0, 180);
+          emitVietnote(lastLine);
+        }
+      };
+      proc.stdout?.on("data", onChunk);
+      proc.stderr?.on("data", onChunk);
+      proc.on("error", (err) => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        resolve({ ok: false, error: err?.message || "Lỗi chạy Python." });
+      });
+      proc.on("close", (code) => {
+        if (activeSetupProc === proc) activeSetupProc = null;
+        resolve(code === 0 ? { ok: true } : { ok: false, error: lastLine || `Cài VietNote ASR thất bại (mã ${code})` });
+      });
+    });
+
+    if (res.ok) {
+      emitVietnote("VietNote ASR (0 MB VRAM) đã sẵn sàng!", { done: true });
+    }
+    return res;
+  });
+
   ipcMain.handle("hub:open-external", async (_evt, rawUrl) => {
     const u = String(rawUrl || "").trim();
     const allowedPrefixes = [
@@ -1928,14 +1992,15 @@ function registerIpc() {
         if (localBackendRes.user_text) {
           recordRecentCommand(localBackendRes.user_text);
         }
+        const sttTag = localBackendRes.stt?.engine === "vietnote" ? "VietNote" : "Whisper";
         const modelLabel =
           localBackendRes.route === "gemini_api_fallback"
-            ? `🎙️ Whisper + ☁️ ${localBackendRes.model_used || "Gemini API"}`
+            ? `🎙️ ${sttTag} + ☁️ ${localBackendRes.model_used || "Gemini API"}`
             : localBackendRes.model_used
-              ? `🎙️ Whisper + ${localBackendRes.model_used}`
+              ? `🎙️ ${sttTag} + ${localBackendRes.model_used}`
               : localBackendRes.route === "antigravity_flash"
-                ? "🎙️ Whisper + Antigravity"
-                : "🎙️ Whisper + Fast-Path";
+                ? `🎙️ ${sttTag} + Antigravity`
+                : `🎙️ ${sttTag} + Fast-Path`;
         const replyText = localBackendRes.reply || "Đã xử lý xong.";
         const ttsExtra = localBackendRes.ok ? await maybeAttachLocalTts(replyText) : {};
         emitHud({ type: "state_sync", ...getPublicState() });

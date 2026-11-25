@@ -23,6 +23,8 @@ import {
   Gamepad2,
   Monitor,
   Languages,
+  Mic,
+  Download,
 } from "lucide-react";
 import { useT } from "../i18n.js";
 
@@ -103,6 +105,30 @@ const KEEP_ALIVE_OPTIONS = [
   { id: "always", label: "Luôn", hint: "Ghim AI trong VRAM" },
 ];
 
+const STT_ENGINE_OPTIONS = [
+  {
+    id: "hybrid",
+    labelVi: "Hybrid (Khuyên dùng)",
+    labelEn: "Hybrid (Auto)",
+    hintVi: "Dùng VietNote 0 MB VRAM cho tiếng Việt/Dictation/Game & giữ Faster-Whisper cho tiếng Anh tự do",
+    hintEn: "Uses VietNote 0 MB VRAM for VI/Dictation/Gaming & Faster-Whisper for open English",
+  },
+  {
+    id: "vietnote",
+    labelVi: "VietNote (0 MB)",
+    labelEn: "VietNote (0 MB)",
+    hintVi: "Zipformer 78M ONNX trên CPU + English Hotwords (0 MB VRAM GPU)",
+    hintEn: "Zipformer 78M CPU ONNX + English Hotwords (0 MB GPU VRAM)",
+  },
+  {
+    id: "whisper",
+    labelVi: "Whisper (CUDA)",
+    labelEn: "Whisper (CUDA)",
+    hintVi: "Faster-Whisper đa ngôn ngữ (~1.4 GB VRAM CUDA hoặc CPU int8)",
+    hintEn: "Multilingual Faster-Whisper (~1.4 GB CUDA VRAM or CPU int8)",
+  },
+];
+
 function formatCountdown(sec) {
   const s = Math.max(0, Math.round(Number(sec) || 0));
   if (s >= 60) {
@@ -167,6 +193,8 @@ export function SettingsDrawer({
   const [keepAliveSetting, setKeepAliveSetting] = useState("5m");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [numCtx, setNumCtx] = useState(8192);
+  const [sttEngineMode, setSttEngineMode] = useState("hybrid");
+  const [installingVietnote, setInstallingVietnote] = useState(false);
   const [backendStatus, setBackendStatus] = useState(null);
   const [vramNotice, setVramNotice] = useState("");
   const [showApiKeyEdit, setShowApiKeyEdit] = useState(false);
@@ -191,6 +219,7 @@ export function SettingsDrawer({
           if (data?.keep_alive_setting) setKeepAliveSetting(data.keep_alive_setting);
           if (data?.thinking_mode) setThinkingMode(data.thinking_mode);
           if (data?.num_ctx) setNumCtx(Number(data.num_ctx));
+          if (data?.stt_engine_mode) setSttEngineMode(data.stt_engine_mode);
         }
       } else {
         setBackendStatus(null);
@@ -370,6 +399,39 @@ export function SettingsDrawer({
       showToast("Chưa kết nối Backend (:8765)");
     } finally {
       pendingSetRef.current = Math.max(0, pendingSetRef.current - 1);
+    }
+  };
+
+  const handleSelectSttEngine = async (mode) => {
+    setSttEngineMode(mode);
+    pendingSetRef.current += 1;
+    try {
+      const resp = await postLocalBackend("/set-stt-engine", { mode });
+      if (resp.ok) {
+        setBackendStatus(await resp.json());
+        showToast(`STT: ${mode.toUpperCase()}`);
+      }
+    } catch {
+      showToast("Chưa kết nối Backend");
+    } finally {
+      pendingSetRef.current = Math.max(0, pendingSetRef.current - 1);
+    }
+  };
+
+  const handleInstallVietnote = async () => {
+    if (installingVietnote || !window.jarvisApi?.installVietnoteAsr) return;
+    setInstallingVietnote(true);
+    showToast("Đang tải VietNote ASR (~100MB)...", 4000);
+    try {
+      const res = await window.jarvisApi.installVietnoteAsr();
+      if (res?.ok) {
+        showToast("VietNote ASR sẵn sàng (0 MB VRAM) ✓", 3000);
+        await refreshBackendStatus();
+      } else {
+        showToast(res?.error || "Cài VietNote ASR thất bại", 3500);
+      }
+    } finally {
+      setInstallingVietnote(false);
     }
   };
 
@@ -726,6 +788,59 @@ export function SettingsDrawer({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Hybrid Dual-STT Engine (VietNote ASR 0 MB VRAM + Faster-Whisper) */}
+            <div className="p-2.5 rounded-xl bg-white border-2 border-[#0E0E13] sakuga-chip-shadow space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Mic className="w-3.5 h-3.5 shrink-0 text-[#0E0E13]" />
+                  <span className="font-extrabold text-[11px] text-[#0E0E13] truncate">
+                    {t.sttEngineTitle}
+                  </span>
+                </div>
+                {!backendStatus?.vietnote_ready && (
+                  <button
+                    type="button"
+                    disabled={installingVietnote}
+                    onClick={handleInstallVietnote}
+                    className="h-6 inline-flex items-center gap-1 px-2 rounded-lg bg-[#0E0E13] text-white text-[9.5px] font-black shrink-0 cursor-pointer disabled:opacity-50"
+                    title="Cài sherpa-onnx & tải Kaisye/VietNote-Zipformer-78M-Streaming (0 MB VRAM)"
+                  >
+                    <Download className="w-2.5 h-2.5 text-[#F43F5E]" />
+                    <span>{installingVietnote ? t.sttInstalling : t.sttInstallBtn}</span>
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {STT_ENGINE_OPTIONS.map((opt) => {
+                  const active = sttEngineMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      title={uiLang === "en" ? opt.hintEn : opt.hintVi}
+                      onClick={() => handleSelectSttEngine(opt.id)}
+                      className={`h-7 px-1.5 rounded-lg text-[10px] font-bold border-2 border-[#0E0E13] whitespace-nowrap transition-colors cursor-pointer ${
+                        active ? "bg-[#0E0E13] text-white" : "bg-white text-[#0E0E13] hover:bg-zinc-100"
+                      }`}
+                    >
+                      {uiLang === "en" ? opt.labelEn : opt.labelVi}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[9.5px] font-bold text-zinc-600 px-0.5 flex items-center justify-between gap-1">
+                <span className="truncate">
+                  {backendStatus?.vietnote_ready
+                    ? uiLang === "en"
+                      ? `VietNote Ready (0 MB VRAM · ${backendStatus?.vietnote_hotwords_count || 0} English hotwords)`
+                      : `VietNote Sẵn sàng (0 MB VRAM · ${backendStatus?.vietnote_hotwords_count || 0} hotwords Anh-Việt)`
+                    : uiLang === "en"
+                      ? "VietNote not installed yet -> auto-using Faster-Whisper"
+                      : "Chưa tải VietNote ASR -> đang dùng Faster-Whisper"}
+                </span>
               </div>
             </div>
 

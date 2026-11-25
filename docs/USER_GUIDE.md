@@ -17,6 +17,7 @@
 | **Thoát hẳn ứng dụng** | **`Shift + Click X`**, **chuột phải nút `X`**, hoặc **Cài đặt -> Thoát hẳn App** | Tắt sạch cả HUD lẫn Backend & giải phóng VRAM |
 | **Đổi ngôn ngữ giao diện** | Bấm **`VI \| EN`** ở góc phải Cài đặt / Setup Wizard hoặc chuột phải System Tray | Chuyển tức thì giữa **Tiếng Việt** và **English** |
 | **Chế độ an toàn** | Chuyển nút **`Safe` / `Turbo`** ở góc trái HUD | **Safe:** hỏi duyệt trước lệnh quan trọng · **Turbo:** chạy ngay (vẫn khóa cửa sổ nhạy cảm) |
+| **Dual STT (`VietNote` + `Whisper`)** | **Cài đặt -> AI & VRAM -> Nhận diện giọng nói** | **Hybrid** tự dùng `VietNote ASR` (`0 MB VRAM` + English hotwords) khi nói Việt-Anh/chép lời/chơi game và dùng `Faster-Whisper` cho tiếng Anh tự do |
 
 ---
 

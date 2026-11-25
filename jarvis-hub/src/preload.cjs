@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("jarvisApi", {
   installOllama: () => ipcRenderer.invoke("hub:install-ollama"),
   pullOllamaModel: (modelName) => ipcRenderer.invoke("hub:pull-ollama-model", modelName),
   installPythonDeps: () => ipcRenderer.invoke("hub:install-python-deps"),
+  installVietnoteAsr: () => ipcRenderer.invoke("hub:install-vietnote-asr"),
   cancelSetupTask: () => ipcRenderer.invoke("hub:cancel-setup-task"),
   onSetupProgress: (callback) => {
     const handler = (_evt, payload) => callback(payload);

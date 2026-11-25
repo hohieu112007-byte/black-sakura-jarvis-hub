@@ -149,6 +149,10 @@ class SetThinkingRequest(BaseModel):
     mode: str
 
 
+class SetSttEngineRequest(BaseModel):
+    mode: str
+
+
 class SetGamingGuardRequest(BaseModel):
     enabled: bool
 
@@ -232,6 +236,12 @@ def set_api_fallback(req: SetApiFallbackRequest) -> Dict[str, Any]:
 @app.post("/set-thinking")
 def set_thinking(req: SetThinkingRequest) -> Dict[str, Any]:
     return _router.set_thinking_mode(req.mode)
+
+
+@app.post("/set-stt-engine")
+@app.post("/api/stt-engine")
+def set_stt_engine(req: SetSttEngineRequest) -> Dict[str, Any]:
+    return _router.set_stt_engine(req.mode)
 
 
 @app.post("/set-gaming-guard")
